@@ -1,0 +1,1682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Ping Pong v0.9</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #111; color: #eee; font-family: system-ui, sans-serif; min-height: 100vh; overflow: hidden; }
+  .oculto { display: none !important; }
+  button { font-size: 18px; padding: 12px 20px; border-radius: 10px; border: 0; background: #d62828; color: #fff; font-weight: 700; cursor: pointer; }
+  button.sec { background: #333; }
+  .estado { font-size: 13px; padding: 6px 10px; border-radius: 6px; background: #333; text-align: center; }
+  .estado.ok { background: #1e7a34; }
+
+  /* Menú */
+  #menu { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 20px; }
+  #menu h1 { font-size: 34px; }
+  #menu .opciones { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  #menu button { width: 200px; padding: 24px; font-size: 22px; }
+
+  /* PC */
+  #pc { position: fixed; inset: 0; }
+  #pc > canvas { display: block; }
+  #tabs { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 5; }
+  #tabs button { font-size: 14px; padding: 8px 14px; background: #2a2a2a; }
+  #tabs button.activo { background: #d62828; }
+  #panel { position: absolute; top: 12px; left: 12px; width: 190px; padding: 12px; background: rgba(20,20,20,.85); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; align-items: center; font-size: 13px; z-index: 4; }
+  #panel.panelDer { left: auto; right: 12px; top: 64px; }
+  #panel select { width: 100%; font-size: 12px; padding: 4px; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; }
+  #panel label { width: 100%; font-size: 11px; color: #aaa; }
+  #codigo { font-size: 30px; font-weight: 800; letter-spacing: 5px; color: #ffcc00; }
+  #qr { background: #fff; padding: 6px; border-radius: 6px; }
+  #panel button { font-size: 12px; padding: 6px 10px; width: 100%; }
+  #ayudaPC { font-size: 11px; color: #999; text-align: center; }
+  #marcador { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); padding: 8px 22px; border-radius: 10px; font-size: 26px; font-weight: 800; display: flex; gap: 18px; align-items: center; }
+  #marcador .saca { color: #ffcc00; }
+  #mensaje { position: absolute; top: 40%; left: 50%; transform: translate(-50%,-50%); font-size: 38px; font-weight: 800; text-shadow: 0 3px 10px #000; text-align: center; pointer-events: none; max-width: 90vw; z-index: 6; }
+  #mensaje small { display: block; font-size: 18px; font-weight: 500; margin-top: 8px; }
+  #mensaje .big { font-size: 110px; color: #ffcc00; }
+  #stats { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.72); padding: 8px 16px; border-radius: 10px; font-size: 15px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 94vw; }
+  #stats b { color: #ffcc00; font-family: monospace; font-size: 17px; }
+  #stats:empty { display: none; }
+
+  /* Configuración */
+  #config { position: absolute; inset: 0; display: flex; background: #0f1218; }
+  #cfgVista { flex: 1; position: relative; min-width: 0; }
+  #cfgVista canvas { display: block; }
+  #cfgLeyenda { position: absolute; bottom: 12px; left: 12px; font-size: 12px; color: #9aa; line-height: 1.6; background: rgba(0,0,0,.5); padding: 8px 10px; border-radius: 8px; }
+  #cfgLeyenda b.r { color: #ff5555; } #cfgLeyenda b.g { color: #55dd55; } #cfgLeyenda b.b { color: #5599ff; }
+  #cfgPanel { width: 330px; background: #171b22; padding: 64px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+  #cfgPanel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #8aa; border-bottom: 1px solid #2a313c; padding-bottom: 4px; }
+  .fila { display: flex; justify-content: space-between; gap: 8px; }
+  .fila span:last-child { font-family: monospace; color: #ffcc00; }
+  .angulos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; }
+  .angulos div { background: #0f1218; border-radius: 6px; padding: 6px 2px; }
+  .angulos b { display: block; font-size: 20px; font-family: monospace; }
+  #cfgPanel select, #cfgPanel input[type=range] { width: 100%; }
+  #cfgPanel button { font-size: 13px; padding: 9px; width: 100%; }
+  #grafico { width: 100%; height: 130px; background: #0f1218; border-radius: 6px; }
+  .nota { font-size: 11px; color: #889; }
+
+  /* Grabador */
+  #grabador { position: absolute; inset: 0; display: flex; background: #0f1218; padding-top: 60px; }
+  #gLista { width: 270px; padding: 12px; overflow-y: auto; border-right: 1px solid #232a35; display: flex; flex-direction: column; gap: 6px; }
+  #gLista button { text-align: left; font-size: 14px; padding: 10px 12px; background: #1a2029; display: flex; justify-content: space-between; gap: 8px; }
+  #gLista button.sel { background: #d62828; }
+  #gLista button.listo span:last-child { color: #6f6; }
+  #gMain { flex: 1; padding: 16px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  #gTitulo { font-size: 30px; font-weight: 800; }
+  #gInstr { font-size: 17px; color: #cdd; line-height: 1.45; max-width: 760px; }
+  #gGeneral { font-size: 13px; color: #899; max-width: 760px; }
+  #gEstado { font-size: 26px; font-weight: 800; padding: 14px 18px; border-radius: 12px; background: #1a2029; }
+  #gEstado.ok { background: #1e7a34; } #gEstado.warn { background: #7a5a1e; }
+  #gMedidor { height: 14px; background: #1a2029; border-radius: 7px; overflow: hidden; position: relative; max-width: 760px; }
+  #gMedidor div { height: 100%; width: 0; background: #ffcc00; }
+  #gMedidor i { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5555; }
+  #gVista { position: relative; width: 100%; max-width: 760px; height: 320px; border-radius: 12px; overflow: hidden; background: #15181f; flex-shrink: 0; }
+  #gVista canvas { display: block; }
+  #gViene { position: absolute; left: 12px; top: 10px; right: 12px; font-size: 18px; font-weight: 800; text-shadow: 0 2px 6px #000; }
+  #gViene small { display: block; font-size: 13px; font-weight: 500; color: #ccd; margin-top: 2px; }
+  #gLeyenda { position: absolute; left: 12px; bottom: 8px; font-size: 12px; color: #bbc; text-shadow: 0 1px 4px #000; }
+  #gPlot { width: 100%; max-width: 760px; height: 200px; background: #151a22; border-radius: 8px; }
+  #gInfo { font-family: monospace; color: #ffcc00; font-size: 14px; }
+  .gBotones { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gBotones button { font-size: 14px; padding: 10px 14px; }
+
+  /* Cel */
+  #cel { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 14px; text-align: center; overflow-y: auto; }
+  #cel button { width: 100%; max-width: 320px; }
+  #sala { font-size: 32px; width: 180px; text-align: center; text-transform: uppercase; letter-spacing: 6px; padding: 8px; border-radius: 8px; border: 2px solid #444; background: #222; color: #ffcc00; }
+  #pasoCal, #paso2 { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+  #cuenta { font-size: 90px; font-weight: 800; color: #ffcc00; min-height: 100px; line-height: 100px; }
+  #barra { width: 220px; height: 10px; background: #333; border-radius: 5px; overflow: hidden; }
+  #barra div { height: 100%; width: 0; background: #ffcc00; }
+  .instr { font-size: 14px; color: #bbb; max-width: 360px; }
+  #version { position: fixed; right: 8px; bottom: 6px; font: 600 12px monospace; color: #9aa; background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 6px; z-index: 50; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="version"></div>
+
+<!-- ===== MENÚ ===== -->
+<div id="menu">
+  <h1>🏓 Ping Pong</h1>
+  <div class="opciones">
+    <button onclick="iniciarPC()">💻 PC (mesa)</button>
+    <button onclick="iniciarCel()">📱 Celular (paleta)</button>
+  </div>
+</div>
+
+<!-- ===== PC ===== -->
+<div id="pc" class="oculto">
+  <div id="tabs">
+    <button id="tabJuego" class="activo">🏓 Juego</button>
+    <button id="tabGrabar">🎙️ Grabador</button>
+    <button id="tabConfig">⚙️ Configuración</button>
+  </div>
+  <div id="marcador"><span id="mVos">VOS 0</span><span>–</span><span id="mCpu">0 CPU</span></div>
+  <div id="mensaje"></div>
+  <div id="stats"></div>
+  <div id="panel">
+    <div>Sala</div>
+    <div id="codigo">····</div>
+    <div id="qr"></div>
+    <div id="estadoPC" class="estado">Iniciando…</div>
+    <label>Modo
+      <select id="selJuego">
+        <option value="practica">🤖 Práctica (robot)</option>
+        <option value="partido">🏆 Partido vs CPU</option>
+      </select>
+    </label>
+    <label id="lblRobot">Robot tira
+      <select id="selRobot">
+        <option value="top">Topspin</option>
+        <option value="back">Cortado (backspin)</option>
+        <option value="plano">Plano (sin efecto)</option>
+        <option value="mezcla">Mezcla</option>
+      </select>
+    </label>
+    <button class="sec" onclick="pedirCalibracion()">🎯 Posición 0 (C)</button>
+    <div id="ayudaPC">Sin cel: click = golpe</div>
+  </div>
+
+  <div id="config" class="oculto">
+    <div id="cfgVista">
+      <div id="cfgLeyenda">
+        Ejes del cel: <b class="r">X</b> derecha · <b class="g">Y</b> arriba · <b class="b">Z</b> sale de la pantalla<br>
+        Botón rojo = bloqueo · Flecha amarilla = hacia la mesa/PC<br>
+        Izquierda: tu cel · Derecha: cómo queda la paleta
+      </div>
+    </div>
+    <div id="cfgPanel">
+      <h3>Sensor</h3>
+      <div class="fila"><span>Fuente</span><span id="cfgFuente">—</span></div>
+      <div class="fila"><span>Frecuencia</span><span id="cfgHz">0 Hz</span></div>
+      <div class="fila"><span>Posición 0</span><span id="cfgCal">no guardada</span></div>
+
+      <h3>Orientación (vista)</h3>
+      <div class="angulos">
+        <div>Giro<b id="cfgYaw">0°</b></div>
+        <div>Inclin.<b id="cfgPitch">0°</b></div>
+        <div>Rolido<b id="cfgRoll">0°</b></div>
+      </div>
+      <div class="fila"><span>Cara de la paleta</span><span id="cfgCara">—</span></div>
+      <div class="fila"><span>Velocidad de paleta</span><span id="cfgVel">—</span></div>
+
+      <h3>Giroscopio (°/s)</h3>
+      <canvas id="grafico" width="576" height="260"></canvas>
+      <div class="nota"><span style="color:#ff5555">■ X</span> &nbsp; <span style="color:#55dd55">■ Y</span> &nbsp; <span style="color:#5599ff">■ Z</span></div>
+
+      <h3>Posición 0</h3>
+      <label>En posición 0, la pantalla mira hacia
+        <select id="cfgMira">
+          <option value="yo">mí (el jugador)</option>
+          <option value="mesa">la mesa / PC</option>
+          <option value="izq">mi izquierda</option>
+          <option value="der">mi derecha</option>
+        </select>
+      </label>
+      <button id="cfgResetYa">🎯 Reset ya (como Betaflight)</button>
+      <button id="cfgResetCuenta" class="sec">⏱️ Reset con cuenta 3‑2‑1</button>
+
+      <h3>Física del golpe</h3>
+      <label>Rebote de la goma: <b id="v_rebote"></b>
+        <input type="range" id="c_rebote" min="0.5" max="0.95" step="0.01">
+      </label>
+      <label>Agarre de la goma (cuánto efecto genera): <b id="v_agarre"></b>
+        <input type="range" id="c_agarre" min="0.1" max="1.5" step="0.05">
+      </label>
+      <label>Largo del brazo, hombro → paleta (palanca del swing): <b id="v_brazo"></b>
+        <input type="range" id="c_brazo" min="0.3" max="1.0" step="0.05">
+      </label>
+      <label>Mano
+        <select id="c_mano"><option value="diestra">Diestra</option><option value="zurda">Zurda</option></select>
+      </label>
+      <label>Efecto en el aire (Magnus): <b id="v_magnus"></b>
+        <input type="range" id="c_magnus" min="0" max="2" step="0.1">
+      </label>
+      <button id="cfgFisicaDef" class="sec">↺ Valores de fábrica</button>
+
+      <h3>Juego</h3>
+      <label>Dificultad CPU: <b id="v_dif"></b>
+        <input type="range" id="c_dif" min="1" max="5" step="1">
+      </label>
+      <label><input type="checkbox" id="c_saqueAsist"> Saque asistido (te asegura el primer pique en tu campo)</label>
+      <label>Swing mínimo para sacar (°/s): <b id="v_umbral"></b>
+        <input type="range" id="c_umbral" min="120" max="600" step="10">
+      </label>
+      <div class="fila"><span>Último swing</span><span id="cfgSwing">—</span></div>
+
+      <h3>Sensor (avanzado)</h3>
+      <label>Respuesta (suave ↔ instantánea): <b id="v_resp"></b>
+        <input type="range" id="c_resp" min="5" max="80">
+      </label>
+    </div>
+  </div>
+
+  <div id="grabador" class="oculto">
+    <div id="gLista"></div>
+    <div id="gMain">
+      <div id="gTitulo"></div>
+      <div id="gVista"><div id="gViene"></div><div id="gLeyenda"><span style="color:#ff9a2e">●</span> viene &nbsp; <span style="color:#7dff7d">●</span> sale &nbsp; <span style="color:#d62828">■</span> tu paleta</div></div>
+      <div id="gInstr"></div>
+      <div id="gGeneral">Sin pelota, como sombra. Arrancá desde la posición de espera, hacé el golpe completo y volvé a la espera. Quedate quieta un segundo entre golpe y golpe. El cel vibra cada vez que guarda uno.</div>
+      <div id="gEstado"></div>
+      <div>Movimiento ahora (la línea roja es lo mínimo para que cuente como golpe):</div>
+      <div id="gMedidor"><div></div><i></i></div>
+      <label style="max-width:760px">Sensibilidad de detección: <b id="gUmbralV"></b> °/s
+        <input type="range" id="gUmbral" min="60" max="600" step="10" style="width:100%">
+      </label>
+      <div class="gBotones">
+        <button id="gReposo" class="oculto">⏺ Grabar 5 segundos</button>
+        <button id="gDel" class="sec">↩ Descartar el último</button>
+        <button id="gBorrar" class="sec">🗑 Borrar este golpe</button>
+        <button id="gSig" class="sec">Siguiente golpe ▶</button>
+        <button id="gBajar">⬇ Descargar grabación (.json)</button>
+      </div>
+      <div>Último golpe grabado — giroscopio (°/s) desde −0,6 s a +0,4 s del pico:</div>
+      <canvas id="gPlot" width="1520" height="400"></canvas>
+      <div id="gInfo"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CEL ===== -->
+<div id="cel" class="oculto">
+  <div id="recCel" class="oculto" style="background:#1e7a34;padding:10px 14px;border-radius:10px;width:100%;max-width:360px">
+    <div id="recCelTxt" style="font-size:18px;font-weight:800"></div>
+    <button id="recCelDel" class="sec" style="margin-top:8px;font-size:15px;padding:8px">↩ Descartar el último</button>
+  </div>
+  <div id="paso1">
+    <h2 style="margin-bottom:12px">🏓 Paleta</h2>
+    <p style="margin-bottom:10px">Código de sala</p>
+    <input id="sala" maxlength="4" autocomplete="off"><br><br>
+    <button id="btnConectar">Conectar y activar sensor</button>
+  </div>
+
+  <div id="pasoCal" class="oculto">
+    <h2>Posición 0</h2>
+    <p class="instr">Parate de frente a la mesa como para jugar. Cel de costado, pulgar apoyado en el botón de bloqueo (sin apretarlo). Tocá <b>Calibrar</b>, acomodate y quedate quieto durante la cuenta.</p>
+    <div id="cuenta"></div>
+    <button id="btnCal">Calibrar</button>
+  </div>
+
+  <div id="paso2" class="oculto">
+    <h3>🏓 ¡A jugar!</h3>
+    <div class="instr">Fuerza de golpe</div>
+    <div id="barra"><div></div></div>
+    <button id="btnRecal" class="sec">🎯 Recalibrar posición 0</button>
+  </div>
+
+  <div id="fuenteCel" class="instr"></div>
+  <div id="pantallaCel" class="instr"></div>
+  <div id="estadoCel" class="estado">Ingresá el código que ves en la PC</div>
+</div>
+
+<script>
+// ⬇ Cambia en cada entrega: así sabés si la página está actualizada (la ves abajo a la derecha, en la PC y en el cel)
+const VERSION = '0.9';
+const VERSION_FECHA = '19/10 00:45';
+const PREFIJO = 'mica-pingpong-';
+const $ = id => document.getElementById(id);
+const clamp = (v, a = -1, b = 1) => Math.max(a, Math.min(b, v));
+const R2D = 180 / Math.PI;
+function setEstado(el, txt, ok) { $(el).textContent = txt; $(el).className = 'estado' + (ok ? ' ok' : ''); }
+function mostrar(id) { ['menu','pc','cel'].forEach(s => $(s).classList.toggle('oculto', s !== id)); }
+
+document.getElementById('version').textContent = 'v' + VERSION + ' · ' + VERSION_FECHA;
+const params = new URLSearchParams(location.search);
+if (params.get('modo') === 'cel') iniciarCel();
+
+/* ================================================================
+   PC
+   ================================================================ */
+let celConn = null;
+function pedirCalibracion() { if (celConn && celConn.open) celConn.send({ t: 'recal' }); }
+
+function iniciarPC() {
+  mostrar('pc');
+
+  // ---------- Ajustes guardados ----------
+  const FISICA_DEF = { rebote: 0.78, agarre: 0.8, brazo: 0.6, magnus: 1 };
+  const cfg = { mira: 'yo', resp: 35, umbral: 280, dif: 3, saqueAsist: true, juego: 'practica', robot: 'top', mano: 'diestra', ...FISICA_DEF };
+  try { Object.assign(cfg, JSON.parse(localStorage.getItem('pp-cfg2') || '{}')); } catch (e) {}
+  const guardarCfg = () => { try { localStorage.setItem('pp-cfg2', JSON.stringify(cfg)); } catch (e) {} };
+
+  const SLIDERS = {
+    rebote: v => v.toFixed(2), agarre: v => v.toFixed(2), brazo: v => v.toFixed(2) + ' m',
+    magnus: v => '×' + v.toFixed(1), dif: v => v, umbral: v => v, resp: v => v
+  };
+  function pintarSliders() { for (const k in SLIDERS) { $('c_' + k).value = cfg[k]; $('v_' + k).textContent = SLIDERS[k](+cfg[k]); } }
+  for (const k in SLIDERS) $('c_' + k).oninput = () => { cfg[k] = +$('c_' + k).value; guardarCfg(); pintarSliders(); };
+  pintarSliders();
+  $('cfgFisicaDef').onclick = () => { Object.assign(cfg, FISICA_DEF); guardarCfg(); pintarSliders(); };
+  $('c_mano').value = cfg.mano;
+  $('c_mano').onchange = () => { cfg.mano = $('c_mano').value; guardarCfg(); };
+  $('c_saqueAsist').checked = cfg.saqueAsist;
+  $('c_saqueAsist').onchange = () => { cfg.saqueAsist = $('c_saqueAsist').checked; guardarCfg(); };
+  $('cfgMira').value = cfg.mira;
+  $('cfgMira').onchange = () => { cfg.mira = $('cfgMira').value; guardarCfg(); resetOrient(); };
+  $('cfgResetYa').onclick = () => resetOrient();
+  $('cfgResetCuenta').onclick = pedirCalibracion;
+  $('selJuego').value = cfg.juego; $('selRobot').value = cfg.robot;
+  $('lblRobot').classList.toggle('oculto', cfg.juego !== 'practica');
+  $('selJuego').onchange = () => {
+    cfg.juego = $('selJuego').value; guardarCfg();
+    $('lblRobot').classList.toggle('oculto', cfg.juego !== 'practica');
+    puntos.player = 0; puntos.cpu = 0; prepararSaque();
+    $('selJuego').blur();
+  };
+  $('selRobot').onchange = () => { cfg.robot = $('selRobot').value; guardarCfg(); $('selRobot').blur(); };
+
+  // ---------- Pestañas ----------
+  let tab = 'juego';
+  function cambiarTab(t) {
+    tab = t;
+    $('tabJuego').classList.toggle('activo', t === 'juego');
+    $('tabConfig').classList.toggle('activo', t === 'config');
+    $('tabGrabar').classList.toggle('activo', t === 'grabar');
+    $('config').classList.toggle('oculto', t !== 'config');
+    $('grabador').classList.toggle('oculto', t !== 'grabar');
+    $('marcador').classList.toggle('oculto', t !== 'juego' || cfg.juego !== 'partido');
+    $('stats').classList.toggle('oculto', t !== 'juego');
+    $('mensaje').classList.toggle('oculto', t === 'grabar');
+    $('panel').classList.toggle('oculto', t !== 'juego' && usandoCel);
+    $('panel').classList.toggle('panelDer', t === 'grabar');
+    renderer.domElement.classList.toggle('oculto', t !== 'juego');
+    if (t === 'config') ajustarCfg();
+    if (t === 'grabar') pintarGrabador();
+    enviarRec();
+  }
+  $('tabGrabar').onclick = () => cambiarTab('grabar');
+  $('tabJuego').onclick = () => cambiarTab('juego');
+  $('tabConfig').onclick = () => cambiarTab('config');
+
+  // ---------- Conexión ----------
+  const codigo = Array.from({length: 4}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random()*24)]).join('');
+  $('codigo').textContent = codigo;
+  const url = new URL(location.href);
+  url.search = '?modo=cel&sala=' + codigo;
+  new QRCode($('qr'), { text: url.href, width: 120, height: 120 });
+
+  const inp = { s: 0 };
+  let usandoCel = false, calibrado = false, msgs = 0, ultDato = 0, enBloqueo = false;
+  const graf = { x: [], y: [], z: [] };
+
+  // ---------- Orientación ----------
+  // Cel → mundo W3C (X este, Y norte, Z arriba) → mundo Three (X derecha, Y arriba, Z hacia el jugador)
+  const M = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  const EJE_Y = new THREE.Vector3(0, 1, 0);
+  const qRaw = new THREE.Quaternion(), Ypsi = new THREE.Quaternion();
+  const Qobj = new THREE.Quaternion(), Qs = new THREE.Quaternion(), Q0inv = new THREE.Quaternion(), Rel = new THREE.Quaternion();
+  const tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3();
+  let hayQ = false;
+  const enVista = (q, out) => out.copy(Ypsi).multiply(M).multiply(q);
+
+  function resetOrient() {
+    if (!hayQ) return;
+    tmpQ.copy(M).multiply(qRaw);
+    const n = tmpV.set(0, 0, 1).applyQuaternion(tmpQ);
+    let phi, objetivo;
+    if (Math.hypot(n.x, n.z) > 0.35) {
+      phi = Math.atan2(n.x, n.z);
+      objetivo = { yo: 0, mesa: Math.PI, izq: -Math.PI / 2, der: Math.PI / 2 }[cfg.mira];
+    } else {
+      const t = tmpV.set(0, 1, 0).applyQuaternion(tmpQ);
+      phi = Math.atan2(t.x, t.z); objetivo = Math.PI;
+    }
+    Ypsi.setFromAxisAngle(EJE_Y, objetivo - phi);
+    enVista(qRaw, Qs); Qobj.copy(Qs);
+    Q0inv.copy(Qs).invert();
+    $('cfgCal').textContent = 'guardada ✔';
+  }
+
+  // Velocidad angular del cel (en ejes de la vista), últimas muestras
+  const wBuf = [];
+  const D2R = Math.PI / 180;
+
+  const peer = new Peer(PREFIJO + codigo);
+  peer.on('open', () => setEstado('estadoPC', 'Esperando celular…'));
+  peer.on('error', e => setEstado('estadoPC', 'Error: ' + e.type));
+  peer.on('connection', conn => {
+    conn.on('open', () => {
+      celConn = conn; usandoCel = true; calibrado = false; hayQ = false; ultDato = performance.now();
+      setEstado('estadoPC', '📱 Conectado', true);
+      $('qr').classList.add('oculto');
+      if (tab !== 'juego') $('panel').classList.add('oculto');
+      setTimeout(enviarRec, 300);
+      mensajeCal();
+    });
+    conn.on('data', d => {
+      if (conn !== celConn) return;
+      ultDato = performance.now();
+      if (d.t === 'o') {
+        msgs++;
+        qRaw.set(d.q[1], d.q[2], d.q[3], d.q[0]).normalize();
+        if (!hayQ) { hayQ = true; resetOrient(); }
+        inp.s = d.s;
+        if (d.r) {
+          graf.x.push(d.r[1]); graf.y.push(d.r[2]); graf.z.push(d.r[0]);
+          // rotationRate: alpha = eje Z del cel, beta = eje X, gamma = eje Y (°/s)
+          enVista(qRaw, tmpQ);
+          const w = new THREE.Vector3(d.r[1], d.r[2], d.r[0]).multiplyScalar(D2R).applyQuaternion(tmpQ);
+          wBuf.push({ t: ultDato, w });
+          if (wBuf.length > 12) wBuf.shift();
+        }
+        if (d.f) $('cfgFuente').textContent = d.f === 'quat' ? 'Quaternion ✔' : 'Euler (menos preciso)';
+        grabadorFrame(d);
+      }
+      if (d.t === 'recDel') descartarUltimo();
+      if (d.t === 'ver') {
+        if (d.v !== VERSION) setEstado('estadoPC', `⚠️ El cel tiene la v${d.v} y la PC la v${VERSION}: recargá la página en el que esté viejo`);
+        else setEstado('estadoPC', `📱 Conectado (v${VERSION})`, true);
+      }
+      if (d.t === 'cal') { calibrado = false; mensajeCal(d.n); }
+      if (d.t === 'calOk') {
+        resetOrient(); calibrado = true;
+        if (estado !== 'fin') prepararSaque(); else mensaje('');
+        if (tab === 'grabar') pintarGrabador();
+      }
+    });
+    conn.on('close', () => {
+      if (conn !== celConn) return;
+      usandoCel = false; calibrado = false;
+      setEstado('estadoPC', 'Celular desconectado');
+      $('qr').classList.remove('oculto'); $('panel').classList.remove('oculto'); mensaje('');
+    });
+  });
+  setInterval(() => { $('cfgHz').textContent = msgs + ' Hz'; msgs = 0; }, 1000);
+
+  function mensajeCal(n) {
+    if (n === -1) return mensaje('Te moviste 😅', 'Quedate quieto en la posición 0');
+    if (n > 0) return mensaje(`<span class="big">${n}</span>`, 'Quedate quieto en la posición 0');
+    if (tab === 'config') return mensaje('');
+    mensaje('📱 Posición 0', 'Parate de frente a la mesa, cel de costado, y tocá Calibrar en el cel');
+  }
+
+  // Sin cel: el mouse inclina la paleta y el click es un swing hacia adelante
+  let clickPendiente = false, mouseX = 0, mouseY = 0;
+  window.addEventListener('mousemove', e => {
+    if (usandoCel || tab !== 'juego') return;
+    mouseX = clamp((e.clientX / innerWidth) * 2 - 1);
+    mouseY = clamp(-((e.clientY / innerHeight) * 2 - 1));
+  });
+  window.addEventListener('mousedown', e => {
+    if (!usandoCel && tab === 'juego' && !e.target.closest('#panel') && !e.target.closest('#tabs')) { inp.s = 600; clickPendiente = true; swing.t = performance.now(); }
+  });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'c' || e.key === 'C') pedirCalibracion();
+    if (e.code === 'Space') { clickPendiente = true; swing.t = performance.now(); }
+  });
+
+  /* ================= FÍSICA ================= */
+  // Medidas reglamentarias (metros)
+  const TW = 1.525, TL = 2.74, TH = 0.76, NETH = 0.1525;
+  // Pelota: 40 mm, 2,7 g. Arrastre y Magnus calculados para esa pelota
+  const BR = 0.02, G = -9.81, KD = 0.12, KM = 0.006;
+  const E_MESA = 0.9, MU_MESA = 0.25, ET_GOMA = 0.35;
+  const PZ = TL / 2 + 0.3, CZ = -(TL / 2 + 0.3);
+  const ARRIBA = new THREE.Vector3(0, 1, 0), CERO = new THREE.Vector3();
+  const _a = new THREE.Vector3(), _c = new THREE.Vector3(), _rel = new THREE.Vector3(), _u = new THREE.Vector3(),
+        _J = new THREE.Vector3(), _rc = new THREE.Vector3(), _c2 = new THREE.Vector3();
+
+  // Un paso de vuelo: gravedad + arrastre del aire + efecto Magnus
+  function paso(b, h) {
+    const sp = b.v.length();
+    _a.set(0, G, 0).addScaledVector(b.v, -KD * sp);
+    _c.crossVectors(b.w, b.v).multiplyScalar(KM * cfg.magnus);
+    _a.add(_c);
+    b.v.addScaledVector(_a, h);
+    b.p.addScaledVector(b.v, h);
+    b.w.multiplyScalar(1 - 0.1 * h);
+  }
+
+  // Choque de la pelota (esfera hueca) contra una superficie con normal nn que se mueve a velocidad Vs.
+  // e = rebote normal, mu = fricción. La fricción en el punto de contacto genera / cambia el efecto.
+  function impacto(b, nn, Vs, e, mu, et = 0) {
+    _rel.copy(b.v).sub(Vs);
+    const vn = _rel.dot(nn);
+    if (vn >= 0) return false;
+    _rc.copy(nn).multiplyScalar(-BR);
+    _u.crossVectors(b.w, _rc).add(_rel);
+    _u.addScaledVector(nn, -_u.dot(nn));             // velocidad de deslizamiento en el contacto
+    b.v.addScaledVector(nn, -(1 + e) * vn);
+    const ut = _u.length();
+    if (ut > 1e-6) {
+      // 0.4 = límite de rodadura de una esfera hueca; et = la goma devuelve parte de la deformación tangencial (más efecto)
+      const j = Math.min(mu * (1 + e) * -vn, 0.4 * (1 + et) * ut);
+      _J.copy(_u).multiplyScalar(-j / ut);
+      b.v.add(_J);
+      _c2.crossVectors(nn, _J).multiplyScalar(-1.5 / BR);
+      b.w.add(_c2);
+    }
+    if (b.w.length() > 900) b.w.setLength(900);
+    if (b.v.length() > 32) b.v.setLength(32);
+    return true;
+  }
+
+  function rebotaMesa(b) {
+    if (b.v.y < 0 && b.p.y - BR <= TH && b.p.y > TH - 0.03 && Math.abs(b.p.x) <= TW / 2 && Math.abs(b.p.z) <= TL / 2) {
+      b.p.y = TH + BR; impacto(b, ARRIBA, CERO, E_MESA, MU_MESA); return true;
+    }
+    return false;
+  }
+  const cruzaRed = (b, zp) => zp * b.p.z <= 0 && zp !== b.p.z && b.p.y - BR < TH + NETH && b.p.y > TH - 0.02 && Math.abs(b.p.x) < TW / 2 + 0.15;
+
+  // Simulador para predecir trayectorias
+  const sim = { p: new THREE.Vector3(), v: new THREE.Vector3(), w: new THREE.Vector3() };
+  function simular(p, v, w, maxT, cb) {
+    sim.p.copy(p); sim.v.copy(v); sim.w.copy(w);
+    const h = 1 / 240;
+    for (let t = 0; t < maxT; t += h) {
+      const zp = sim.p.z;
+      paso(sim, h);
+      let ev = null;
+      if (cruzaRed(sim, zp)) ev = 'red';
+      else if (zp * sim.p.z <= 0 && zp !== sim.p.z) ev = 'cruza';
+      if (rebotaMesa(sim)) ev = 'pique';
+      if (sim.p.y < TH - 0.3) ev = 'cae';
+      if (cb(ev, t)) return;
+    }
+  }
+
+  // Distancia (sobre dir) a la que la pelota baja a la altura de la mesa
+  function alcance(p0, v0, w0, dir) {
+    let r = 1e9;
+    sim.p.copy(p0); sim.v.copy(v0); sim.w.copy(w0);
+    const h = 1 / 240;
+    for (let t = 0; t < 3; t += h) {
+      paso(sim, h);
+      if (sim.v.y < 0 && sim.p.y <= TH + BR) { r = (sim.p.x - p0.x) * dir.x + (sim.p.z - p0.z) * dir.z; break; }
+    }
+    return r;
+  }
+  const _v0 = new THREE.Vector3(), _dir = new THREE.Vector3();
+  function resolverVy(p0, dir, velH, w0, d) {
+    let lo = -7, hi = 9;
+    _v0.copy(dir).multiplyScalar(velH); _v0.y = hi;
+    if (alcance(p0, _v0, w0, dir) < d) return null;
+    for (let i = 0; i < 22; i++) {
+      const m = (lo + hi) / 2;
+      _v0.copy(dir).multiplyScalar(velH); _v0.y = m;
+      if (alcance(p0, _v0, w0, dir) < d) lo = m; else hi = m;
+    }
+    return (lo + hi) / 2;
+  }
+
+  // Tiro que pica en (tx, tz) pasando la red. Si validar=false se usa para errores a propósito
+  function apuntar(desde, tx, tz, velH, w0, validar = true) {
+    for (let k = 0; k < 10; k++) {
+      _dir.set(tx - desde.x, 0, tz - desde.z);
+      const d = _dir.length(); _dir.normalize();
+      const vy = resolverVy(desde, _dir, velH, w0, d);
+      if (vy !== null) {
+        const v = _dir.clone().multiplyScalar(velH); v.y = vy;
+        if (!validar) return v;
+        let ok = false;
+        simular(desde, v, w0, 3, ev => {
+          if (ev === 'red' || ev === 'cae') return true;
+          if (ev === 'pique') { ok = Math.sign(sim.p.z) === Math.sign(tz); return true; }
+        });
+        if (ok) return v;
+      }
+      velH *= 0.88;
+    }
+    return _dir.clone().multiplyScalar(3.5).setY(2.5);
+  }
+
+  // Saque: primer pique en tu campo, después en el del rival
+  function apuntarSaque(desde, tx, tz, velHBase, w0, lado) {
+    const velocidades = [1, 1.15, 0.88, 1.3, 0.78, 1.5, 1.7].map(f => velHBase * f);
+    for (const fondo of [0.5, 0.35, 0.65]) {                  // primer pique: a cuánto del fondo de tu campo
+      const z1 = lado * (TL / 2 - fondo);
+      for (const velH of velocidades) {
+        _dir.set(tx - desde.x, 0, tz - desde.z).normalize();
+        const d1 = Math.abs(desde.z - z1) / Math.abs(_dir.z);
+        const vy = resolverVy(desde, _dir, velH, w0, d1);
+        if (vy === null) continue;
+        const v = _dir.clone().multiplyScalar(velH); v.y = vy;
+        let n = 0, ok = false;
+        simular(desde, v, w0, 3, ev => {
+          if (ev === 'red' || ev === 'cae') return true;
+          if (ev === 'pique') {
+            n++;
+            if (n === 1 && Math.sign(sim.p.z) !== lado) return true;
+            if (n === 2) { ok = Math.sign(sim.p.z) === -lado; return true; }
+          }
+        });
+        if (ok) return v;
+      }
+    }
+    return null;
+  }
+
+  // Efecto: top > 0 = topspin, top < 0 = cortado. side = efecto lateral
+  function efecto(dir, top, side) {
+    return new THREE.Vector3().crossVectors(ARRIBA, dir).normalize().multiplyScalar(top).add(new THREE.Vector3(0, side, 0));
+  }
+
+  /* ================= ESCENA DEL JUEGO ================= */
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  $('pc').prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x15181f);
+  scene.fog = new THREE.Fog(0x15181f, 6, 14);
+
+  const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 50);
+  camera.position.set(0, 1.5, 2.9);
+  const camLook = new THREE.Vector3(0, 0.75, -0.5);
+  camera.lookAt(camLook);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 0.55));
+  const sol = new THREE.DirectionalLight(0xffffff, 0.85);
+  sol.position.set(0, 6, 0.3);
+  sol.castShadow = true;
+  sol.shadow.mapSize.set(1024, 1024);
+  Object.assign(sol.shadow.camera, { left: -2.5, right: 2.5, top: 2.5, bottom: -2.5, near: 1, far: 10 });
+  scene.add(sol);
+  const fill = new THREE.PointLight(0xffffff, 0.35); fill.position.set(0, 2, 3); scene.add(fill);
+
+  const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 });
+
+  const piso = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), mat(0x2b2f3a));
+  piso.rotation.x = -Math.PI / 2; piso.receiveShadow = true; scene.add(piso);
+
+  const tablero = new THREE.Mesh(new THREE.BoxGeometry(TW, 0.04, TL), mat(0x1d4e89));
+  tablero.position.y = TH - 0.02; tablero.receiveShadow = true; scene.add(tablero);
+  const blanco = mat(0xffffff);
+  const linea = (w, d, x, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.002, d), blanco); m.position.set(x, TH + 0.001, z); m.receiveShadow = true; scene.add(m); };
+  linea(0.02, TL, -TW/2 + 0.01, 0); linea(0.02, TL, TW/2 - 0.01, 0);
+  linea(TW, 0.02, 0, -TL/2 + 0.01); linea(TW, 0.02, 0, TL/2 - 0.01);
+  linea(0.006, TL, 0, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const pata = new THREE.Mesh(new THREE.BoxGeometry(0.05, TH, 0.05), mat(0x222222));
+    pata.position.set(sx * (TW/2 - 0.1), TH/2, sz * (TL/2 - 0.25)); scene.add(pata);
+  }
+  const red = new THREE.Mesh(new THREE.PlaneGeometry(TW + 0.3, NETH),
+    new THREE.MeshStandardMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
+  red.position.set(0, TH + NETH/2, 0); scene.add(red);
+  const banda = new THREE.Mesh(new THREE.BoxGeometry(TW + 0.3, 0.015, 0.01), blanco);
+  banda.position.set(0, TH + NETH, 0); scene.add(banda);
+  for (const sx of [-1, 1]) {
+    const poste = new THREE.Mesh(new THREE.BoxGeometry(0.02, NETH + 0.03, 0.02), mat(0x333333));
+    poste.position.set(sx * (TW/2 + 0.15), TH + NETH/2, 0); scene.add(poste);
+  }
+
+  // Paleta: en reposo la cara roja mira a la red (-Z) y el mango va para abajo
+  function crearPaleta(esc, colorFrente, colorDorso, opacidad) {
+    const g = new THREE.Group();
+    const t = opacidad < 1;
+    const frente = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.006, 32),
+      new THREE.MeshStandardMaterial({ color: colorFrente, roughness: 0.5, transparent: t, opacity: opacidad }));
+    frente.rotation.x = Math.PI / 2; frente.position.z = -0.004; frente.castShadow = true; g.add(frente);
+    const dorso = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.006, 32),
+      new THREE.MeshStandardMaterial({ color: colorDorso, roughness: 0.5, transparent: t, opacity: opacidad }));
+    dorso.rotation.x = Math.PI / 2; dorso.position.z = 0.004; g.add(dorso);
+    const mango = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.024),
+      new THREE.MeshStandardMaterial({ color: 0x8a5a2b, transparent: t, opacity: opacidad }));
+    mango.position.y = -0.13; mango.castShadow = true; g.add(mango);
+    esc.add(g);
+    return g;
+  }
+  const pPad = crearPaleta(scene, 0xd62828, 0x111111, 0.55);
+  const cPad = crearPaleta(scene, 0x111111, 0xd62828, 1);
+
+  // Pelota con una franja para que se vea el efecto
+  const bolaMesh = new THREE.Mesh(new THREE.SphereGeometry(BR, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0xff9a2e, emissive: 0x442200, roughness: 0.4 }));
+  bolaMesh.castShadow = true; scene.add(bolaMesh);
+  const franja = new THREE.Mesh(new THREE.TorusGeometry(BR * 1.0, BR * 0.18, 6, 24), mat(0x7a2e00));
+  bolaMesh.add(franja);
+
+  /* ================= CONFIGURACIÓN 3D ================= */
+  const r2 = new THREE.WebGLRenderer({ antialias: true });
+  r2.setPixelRatio(Math.min(devicePixelRatio, 2));
+  $('cfgVista').prepend(r2.domElement);
+  const s2 = new THREE.Scene();
+  s2.background = new THREE.Color(0x0f1218);
+  const cam2 = new THREE.PerspectiveCamera(42, 1, 0.01, 10);
+  cam2.position.set(0, 0.1, 0.62); cam2.lookAt(0, 0, 0);
+  s2.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.7));
+  const luz2 = new THREE.DirectionalLight(0xffffff, 0.8); luz2.position.set(0.3, 0.6, 0.8); s2.add(luz2);
+  const grilla = new THREE.GridHelper(1.2, 24, 0x3a4a66, 0x232c3a); grilla.position.y = -0.18; s2.add(grilla);
+  s2.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, -0.175, 0.2), 0.45, 0xffcc00, 0.06, 0.035));
+
+  function texturaTexto(dibujar, w = 256, h = 512) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    dibujar(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+  }
+  function etiqueta(txt, color) {
+    const tex = texturaTexto((g, w, h) => {
+      g.font = 'bold 54px system-ui'; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(txt, w / 2, h / 2);
+    }, 512, 128);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sp.scale.set(0.16, 0.04, 1); s2.add(sp); return sp;
+  }
+  etiqueta('MESA / PC', '#ffcc00').position.set(0, -0.14, -0.3);
+
+  function crearCelular() {
+    const g = new THREE.Group();
+    const W = 0.075, H = 0.16, D = 0.009;
+    const pantalla = texturaTexto((c, w, h) => {
+      c.fillStyle = '#05070a'; c.fillRect(0, 0, w, h);
+      const grd = c.createLinearGradient(0, 0, 0, h); grd.addColorStop(0, '#1d4e89'); grd.addColorStop(1, '#0a1a33');
+      c.fillStyle = grd; c.fillRect(10, 10, w - 20, h - 20);
+      c.fillStyle = '#05070a'; c.beginPath(); c.arc(w / 2, 26, 7, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffcc00'; c.textAlign = 'center';
+      c.font = 'bold 110px system-ui'; c.fillText('↑', w / 2, 150);
+      c.font = 'bold 34px system-ui'; c.fillText('ARRIBA', w / 2, 200);
+      c.fillStyle = '#cfe'; c.font = 'bold 30px system-ui'; c.fillText('PANTALLA', w / 2, 330);
+      c.font = '24px system-ui'; c.fillText('bloqueo →', w / 2 + 30, 420);
+    });
+    const dorso = texturaTexto((c, w, h) => {
+      c.fillStyle = '#4a4f58'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#ddd'; c.textAlign = 'center'; c.font = 'bold 36px system-ui'; c.fillText('DORSO', w / 2, h / 2);
+    });
+    const marco = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.5, roughness: 0.35 });
+    const cuerpo = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), [
+      marco, marco, marco, marco,
+      new THREE.MeshStandardMaterial({ map: pantalla, roughness: 0.25 }),
+      new THREE.MeshStandardMaterial({ map: dorso, roughness: 0.6 })
+    ]);
+    g.add(cuerpo);
+    const bloqueo = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.018, 0.005), new THREE.MeshStandardMaterial({ color: 0xff3b3b, emissive: 0x551111 }));
+    bloqueo.position.set(W / 2 + 0.0015, 0.02, 0); g.add(bloqueo);
+    const volumen = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.032, 0.005), mat(0x777777));
+    volumen.position.set(W / 2 + 0.0015, 0.05, 0); g.add(volumen);
+    const modulo = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.003), mat(0x2a2d33));
+    modulo.position.set(W / 2 - 0.022, H / 2 - 0.024, -D / 2 - 0.0015); g.add(modulo);
+    for (const [cx, cy] of [[-0.007, 0.007], [0.007, 0.007], [-0.007, -0.007]]) {
+      const lente = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.002, 16), mat(0x0a0a0a));
+      lente.rotation.x = Math.PI / 2; lente.position.set(W / 2 - 0.022 + cx, H / 2 - 0.024 + cy, -D / 2 - 0.0035); g.add(lente);
+    }
+    g.add(new THREE.AxesHelper(0.07));
+    s2.add(g);
+    return g;
+  }
+  const celModelo = crearCelular(); celModelo.position.x = -0.13;
+  const palPreview = crearPaleta(s2, 0xd62828, 0x111111, 1); palPreview.position.x = 0.15;
+  etiqueta('TU CEL', '#cfe').position.set(-0.13, 0.15, 0);
+  etiqueta('PALETA', '#cfe').position.set(0.15, 0.15, 0);
+
+  function ajustarCfg() {
+    const v = $('cfgVista'); const w = v.clientWidth, h = v.clientHeight;
+    if (!w || !h) return;
+    r2.setSize(w, h); cam2.aspect = w / h; cam2.updateProjectionMatrix();
+  }
+  addEventListener('resize', () => {
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    ajustarCfg();
+  });
+
+  const eul = new THREE.Euler();
+  const gctx = $('grafico').getContext('2d');
+  function dibujarGrafico() {
+    const c = $('grafico'), w = c.width, h = c.height, N = 240;
+    for (const k of ['x', 'y', 'z']) if (graf[k].length > N) graf[k].splice(0, graf[k].length - N);
+    gctx.fillStyle = '#0f1218'; gctx.fillRect(0, 0, w, h);
+    gctx.strokeStyle = '#2a313c'; gctx.lineWidth = 1;
+    for (const f of [0.25, 0.5, 0.75]) { gctx.beginPath(); gctx.moveTo(0, h * f); gctx.lineTo(w, h * f); gctx.stroke(); }
+    gctx.fillStyle = '#667'; gctx.font = '18px monospace';
+    gctx.fillText('+720', 4, 18); gctx.fillText('-720', 4, h - 6);
+    const col = { x: '#ff5555', y: '#55dd55', z: '#5599ff' };
+    for (const k of ['x', 'y', 'z']) {
+      const a = graf[k]; if (!a.length) continue;
+      gctx.strokeStyle = col[k]; gctx.lineWidth = 2; gctx.beginPath();
+      a.forEach((v, i) => {
+        const px = (i + N - a.length) / (N - 1) * w, py = h / 2 - clamp(v / 720) * (h / 2 - 4);
+        i ? gctx.lineTo(px, py) : gctx.moveTo(px, py);
+      });
+      gctx.stroke();
+    }
+  }
+
+  /* ================= GRABADOR DE GOLPES ================= */
+  const GOLPES = [
+    { id: 'bloqueo_d', nombre: 'Bloqueo de derecha', umbral: 120, instr: 'Como si te tiraran un topspin rápido al lado derecho: paleta firme adelante, cara un poco cerrada y un empujoncito corto. Casi sin swing.' },
+    { id: 'peloteo_d', nombre: 'Drive / peloteo de derecha', umbral: 250, instr: 'Golpe de derecha a ritmo medio, como peloteando para calentar. Swing corto y relajado.' },
+    { id: 'topspin_d', nombre: 'Topspin de derecha', umbral: 300, instr: 'Desde abajo-atrás hacia arriba-adelante, cepillando la pelota. Terminá con la paleta arriba, a la altura de la frente.' },
+    { id: 'remate', nombre: 'Remate (smash)', umbral: 350, instr: 'Golpe de derecha fuerte, de arriba hacia abajo-adelante, como para matar una pelota alta.' },
+    { id: 'push_d', nombre: 'Corte / push de derecha', umbral: 150, instr: 'Cara abierta, movimiento corto hacia adelante y un poco abajo, como devolviendo un saque cortado con la derecha.' },
+    { id: 'bloqueo_r', nombre: 'Bloqueo de revés', umbral: 120, instr: 'Como si te tiraran un topspin al revés: paleta delante del cuerpo, cara un poco cerrada, empujoncito corto.' },
+    { id: 'peloteo_r', nombre: 'Revés plano / peloteo', umbral: 220, instr: 'Revés de ritmo medio, como peloteando. Golpe corto desde delante de la panza hacia adelante.' },
+    { id: 'topspin_r', nombre: 'Topspin de revés', umbral: 280, instr: 'Revés cepillando de abajo hacia arriba-adelante, con giro de muñeca/antebrazo.' },
+    { id: 'push_r', nombre: 'Corte / push de revés', umbral: 150, instr: 'Cara abierta, corto, hacia adelante y abajo, como devolviendo un cortado con el revés.' },
+    { id: 'saque', nombre: 'Saque cortado', umbral: 200, instr: 'Tu saque habitual con efecto cortado. Hacé el gesto completo (sin pelota).' },
+    { id: 'reposo', nombre: 'Movimientos entre golpes', meta: 3, instr: 'NO hagas golpes: tocá "Grabar 5 segundos" y movete como entre punto y punto (acomodarte, mirar, bajar el brazo). Sirve para que el juego no confunda eso con un golpe.' }
+  ];
+  // Animación de muestra: cómo viene la pelota (lado, efecto, velocidad), cómo es el swing y cómo sale
+  // poses de la paleta relativas al punto de contacto: [dx, dy, dz, rotX (−=cerrada), rotY, rotZ]
+  const ANIM = {
+    bloqueo_d: { viene: 'Topspin rápido a tu derecha', sub: 'Bloqueo: paleta firme, cara cerrada, casi sin swing', tx: 0.45, efIn: 220, vIn: 9,
+                 atras: [0, 0, 0.08, -0.4, 0, 0], contacto: [0, 0, 0, -0.4, 0, 0], final: [-0.03, 0.02, -0.1, -0.4, 0, 0], sale: { tx: -0.3, tz: -0.9, v: 7, ef: 60 } },
+    peloteo_d: { viene: 'Pelota a ritmo medio a tu derecha', sub: 'Drive: swing corto de atrás-derecha hacia adelante', tx: 0.45, efIn: 100, vIn: 6.5,
+                 atras: [0.25, -0.05, 0.25, -0.15, -0.6, 0], contacto: [0, 0, 0, -0.2, 0, 0], final: [-0.3, 0.12, -0.2, -0.25, 0.7, 0], sale: { tx: -0.35, tz: -0.95, v: 9, ef: 120 } },
+    topspin_d: { viene: 'Pelota media/larga a tu derecha', sub: 'Topspin: de abajo-atrás hacia arriba-adelante, cepillando', tx: 0.45, efIn: 60, vIn: 6,
+                 atras: [0.2, -0.35, 0.25, -0.3, -0.4, 0], contacto: [0, 0, 0, -0.5, 0, 0], final: [-0.25, 0.45, -0.15, -0.7, 0.6, 0], sale: { tx: -0.4, tz: -1.0, v: 10, ef: 300 } },
+    remate:    { viene: 'Globo alto a tu derecha', sub: 'Remate: de arriba hacia abajo-adelante, fuerte', tx: 0.4, efIn: 80, vIn: 3.2, globo: true,
+                 atras: [0.15, 0.3, 0.3, -0.2, -0.4, 0], contacto: [0, 0, 0, -0.45, 0, 0], final: [-0.25, -0.4, -0.25, -0.7, 0.5, 0], sale: { tx: 0.3, tz: -0.8, v: 15, ef: 40 } },
+    push_d:    { viene: 'Cortado corto a tu derecha', sub: 'Push: cara abierta, corto hacia adelante y un poco abajo', tx: 0.35, efIn: -170, vIn: 4.2, corta: true,
+                 atras: [0.04, 0.08, 0.16, 0.9, 0, 0], contacto: [0, 0, 0, 0.9, 0, 0], final: [-0.05, -0.04, -0.2, 0.9, 0, 0], sale: { tx: -0.2, tz: -0.6, v: 4.2, ef: -150 } },
+    bloqueo_r: { viene: 'Topspin rápido a tu revés', sub: 'Bloqueo de revés: paleta delante del cuerpo, cara cerrada', tx: -0.2, efIn: 220, vIn: 9, reves: true,
+                 atras: [0, 0, 0.08, 0.4, 0, 0], contacto: [0, 0, 0, 0.4, 0, 0], final: [0.02, 0.02, -0.1, 0.4, 0, 0], sale: { tx: 0.3, tz: -0.9, v: 7, ef: 60 } },
+    peloteo_r: { viene: 'Pelota a ritmo medio a tu revés', sub: 'Revés: corto, desde delante de la panza hacia adelante', tx: -0.2, efIn: 100, vIn: 6.5, reves: true,
+                 atras: [-0.12, -0.03, 0.18, 0.2, 0.5, 0], contacto: [0, 0, 0, 0.2, 0, 0], final: [0.15, 0.1, -0.18, 0.25, -0.5, 0], sale: { tx: 0.35, tz: -0.95, v: 8.5, ef: 100 } },
+    topspin_r: { viene: 'Pelota media a tu revés', sub: 'Topspin de revés: de abajo hacia arriba-adelante con muñeca', tx: -0.2, efIn: 60, vIn: 6, reves: true,
+                 atras: [-0.1, -0.25, 0.15, 0.3, 0.6, 0], contacto: [0, 0, 0, 0.45, 0, 0], final: [0.2, 0.35, -0.15, 0.6, -0.6, 0], sale: { tx: 0.4, tz: -1.0, v: 9.5, ef: 280 } },
+    push_r:    { viene: 'Cortado corto a tu revés', sub: 'Push de revés: cara abierta, corto hacia adelante y abajo', tx: -0.15, efIn: -170, vIn: 4.2, corta: true, reves: true,
+                 atras: [0, 0.08, 0.16, -0.9, 0, 0], contacto: [0, 0, 0, -0.9, 0, 0], final: [0.04, -0.04, -0.2, -0.9, 0, 0], sale: { tx: 0.2, tz: -0.6, v: 4.2, ef: -150 } },
+    saque:     { viene: 'Tu saque: tirás la pelota para arriba', sub: 'Cortado: cara abierta, la paleta pasa por debajo de la pelota', tx: 0.3, saque: true,
+                 atras: [0.12, 0.1, 0.12, 0.9, -0.3, 0], contacto: [0, 0, 0, 1.0, 0, 0], final: [-0.2, -0.05, -0.12, 1.0, 0.3, 0], sale: { tx: -0.2, tz: -0.9, v: 4, ef: -180 } },
+    reposo:    { viene: 'Sin pelota', sub: 'Movete como entre punto y punto, sin hacer golpes', reposo: true }
+  };
+  const META = 12;
+  let grab = {};
+  try { grab = JSON.parse(localStorage.getItem('pp-grab') || '{}'); } catch (e) {}
+  let gSel = 0;
+  const recBuf = [];
+  const cap = { activo: false, tPico: 0, pico: 0, hasta: 0, reposoHasta: 0 };
+  const umbralGolpe = {};
+  try { Object.assign(umbralGolpe, JSON.parse(localStorage.getItem('pp-grab-umbral') || '{}')); } catch (e) {}
+  const golpeSel = () => GOLPES[gSel];
+  const metaDe = g => g.meta || META;
+  const umbralDe = g => umbralGolpe[g.id] ?? g.umbral ?? 250;
+  function guardarGrab() {
+    try { localStorage.setItem('pp-grab', JSON.stringify(grab)); }
+    catch (e) { $('gEstado').textContent = '⚠️ No entra más en la memoria del navegador: descargá la grabación'; }
+  }
+
+  function pintarGrabador() {
+    $('gLista').innerHTML = '';
+    GOLPES.forEach((g, i) => {
+      const n = (grab[g.id] || []).length, b = document.createElement('button');
+      b.className = (i === gSel ? 'sel ' : '') + (n >= metaDe(g) ? 'listo' : '');
+      b.innerHTML = `<span>${g.nombre}</span><span>${n}/${metaDe(g)}${n >= metaDe(g) ? ' ✔' : ''}</span>`;
+      b.onclick = () => { gSel = i; pintarGrabador(); enviarRec(); };
+      $('gLista').appendChild(b);
+    });
+    const g = golpeSel(), n = (grab[g.id] || []).length;
+    $('gTitulo').textContent = g.nombre;
+    $('gInstr').textContent = g.instr;
+    prepararPreview(g.id);
+    $('gReposo').classList.toggle('oculto', g.id !== 'reposo');
+    $('gUmbral').value = umbralDe(g); $('gUmbralV').textContent = umbralDe(g);
+    $('gMedidor').querySelector('i').style.left = Math.min(100, umbralDe(g) / 8) + '%';
+    const est = $('gEstado');
+    if (!usandoCel) { est.textContent = '📱 Conectá el cel para grabar'; est.className = 'warn'; }
+    else if (!calibrado) { est.textContent = '🎯 Primero hacé la posición 0 en el cel'; est.className = 'warn'; }
+    else if (n >= metaDe(g)) { est.textContent = `✔ Listo (${n}/${metaDe(g)}). Pasá al siguiente golpe`; est.className = 'ok'; }
+    else if (g.id === 'reposo') { est.textContent = `Tocá "Grabar 5 segundos" (${n}/${metaDe(g)})`; est.className = ''; }
+    else { est.textContent = `Hacé el golpe… ${n}/${metaDe(g)}`; est.className = ''; }
+    dibujarMuestra((grab[g.id] || []).slice(-1)[0]);
+  }
+
+  function enviarRec() {
+    if (!celConn || !celConn.open) return;
+    if (tab !== 'grabar') return celConn.send({ t: 'rec', txt: '' });
+    const g = golpeSel(), n = (grab[g.id] || []).length;
+    celConn.send({ t: 'rec', txt: `🎙️ ${g.nombre}: ${n}/${metaDe(g)}` });
+  }
+
+  // Ángulo de la cara y hacia dónde apunta, para un cuaternión crudo del cel
+  const _gq = new THREE.Quaternion(), _gn = new THREE.Vector3();
+  function caraDe(qArr) {
+    _gq.set(qArr[1], qArr[2], qArr[3], qArr[0]);
+    enVista(_gq, _gq); _gq.multiply(Q0inv);
+    _gn.set(0, 0, -1).applyQuaternion(_gq);
+    return { cerrada: Math.round(Math.asin(clamp(-_gn.y)) * R2D), giro: Math.round(Math.atan2(_gn.x, -_gn.z) * R2D) };
+  }
+
+  function grabadorFrame(d) {
+    const now = performance.now();
+    recBuf.push({ t: now, ts: d.ts, q: d.q, r: d.r, a: d.a });
+    while (recBuf.length && now - recBuf[0].t > 6000) recBuf.shift();
+    if (tab !== 'grabar') return;
+    const mag = d.r ? Math.hypot(d.r[0], d.r[1], d.r[2]) : 0;
+    $('gMedidor').firstElementChild.style.width = Math.min(100, mag / 8) + '%';
+    if (!calibrado) return;
+    const g = golpeSel();
+    if (g.id === 'reposo') {
+      if (cap.reposoHasta && now >= cap.reposoHasta) {
+        const frames = recBuf.filter(f => f.t >= cap.reposoHasta - 5000);
+        guardarMuestra(g, frames, cap.reposoHasta - 5000, 0);
+        cap.reposoHasta = 0;
+      }
+      return;
+    }
+    if ((grab[g.id] || []).length >= metaDe(g)) return;
+    if (!cap.activo && now > cap.hasta && mag > umbralDe(g)) { cap.activo = true; cap.tPico = now; cap.pico = mag; }
+    if (cap.activo) {
+      if (mag > cap.pico) { cap.pico = mag; cap.tPico = now; }
+      if (now - cap.tPico > 420) {
+        cap.activo = false; cap.hasta = now + 600;
+        const frames = recBuf.filter(f => f.t >= cap.tPico - 600 && f.t <= cap.tPico + 420);
+        guardarMuestra(g, frames, cap.tPico, cap.pico);
+      }
+    }
+  }
+
+  function guardarMuestra(g, frames, t0, pico) {
+    if (frames.length < 5) return;
+    let fp = frames[0];
+    for (const f of frames) if (Math.abs(f.t - t0) < Math.abs(fp.t - t0)) fp = f;
+    const muestra = {
+      pico: Math.round(pico), cara: pico ? caraDe(fp.q) : null,
+      calib: { ypsi: Ypsi.toArray().map(v => +v.toFixed(5)), q0inv: Q0inv.toArray().map(v => +v.toFixed(5)) },
+      frames: frames.map(f => ({ t: Math.round(f.t - t0), ts: f.ts, q: f.q, r: f.r, a: f.a }))
+    };
+    (grab[g.id] = grab[g.id] || []).push(muestra);
+    guardarGrab();
+    if (celConn && celConn.open) celConn.send({ t: 'hit' });
+    pintarGrabador(); enviarRec();
+    const n = grab[g.id].length;
+    if (n >= metaDe(g)) { $('gEstado').textContent = `✔ ${g.nombre} completo. Pasá al siguiente`; $('gEstado').className = 'ok'; }
+    else { $('gEstado').textContent = `¡Guardado! ${n}/${metaDe(g)}`; $('gEstado').className = 'ok'; setTimeout(() => { if (tab === 'grabar') pintarGrabador(); }, 900); }
+  }
+
+  function descartarUltimo() {
+    const g = golpeSel();
+    if (grab[g.id] && grab[g.id].length) { grab[g.id].pop(); guardarGrab(); pintarGrabador(); enviarRec(); }
+  }
+
+  /* ---- Vista previa animada ---- */
+  const pv = { r: null, esc: null, cam: null, bola: null, pal: null, lineaIn: null, lineaOut: null, marcas: [], tray: [], tC: 0, t: 0, poses: null, id: '' };
+  function iniciarPreview() {
+    pv.r = new THREE.WebGLRenderer({ antialias: true });
+    pv.r.setPixelRatio(Math.min(devicePixelRatio, 2));
+    $('gVista').prepend(pv.r.domElement);
+    const e = pv.esc = new THREE.Scene();
+    e.background = new THREE.Color(0x15181f);
+    pv.cam = new THREE.PerspectiveCamera(50, 2, 0.05, 30);
+    pv.cam.position.set(0.2, 1.42, 2.55); pv.cam.lookAt(0, 0.82, 0.1);
+    e.add(new THREE.HemisphereLight(0xffffff, 0x333344, 0.75));
+    const l = new THREE.DirectionalLight(0xffffff, 0.6); l.position.set(1, 4, 2); e.add(l);
+    const piso = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), mat(0x2b2f3a)); piso.rotation.x = -Math.PI / 2; e.add(piso);
+    const tab_ = new THREE.Mesh(new THREE.BoxGeometry(TW, 0.04, TL), mat(0x1d4e89)); tab_.position.y = TH - 0.02; e.add(tab_);
+    const ln = (w, d, x, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.002, d), blanco); m.position.set(x, TH + 0.001, z); e.add(m); };
+    ln(0.02, TL, -TW/2 + 0.01, 0); ln(0.02, TL, TW/2 - 0.01, 0); ln(TW, 0.02, 0, -TL/2 + 0.01); ln(TW, 0.02, 0, TL/2 - 0.01); ln(0.006, TL, 0, 0);
+    const red_ = new THREE.Mesh(new THREE.PlaneGeometry(TW + 0.3, NETH), new THREE.MeshStandardMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
+    red_.position.set(0, TH + NETH / 2, 0); e.add(red_);
+    pv.bola = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 16), new THREE.MeshStandardMaterial({ color: 0xff9a2e, emissive: 0x663300 }));
+    e.add(pv.bola);
+    pv.pal = crearPaleta(e, 0xd62828, 0x111111, 0.9);
+    // flecha de efecto que acompaña a la pelota
+    pv.flecha = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.1, 0xffffff, 0.04, 0.03);
+    e.add(pv.flecha);
+  }
+  const _pq = new THREE.Quaternion(), _pq2 = new THREE.Quaternion(), _pe = new THREE.Euler();
+  function poseQ(p, reves, out) {
+    _pe.set(p[3], p[4] + (reves ? Math.PI : 0), p[5], 'YXZ');
+    return out.setFromEuler(_pe);
+  }
+  function lineaPv(puntos, color) {
+    const g = new THREE.BufferGeometry().setFromPoints(puntos);
+    const l = new THREE.Line(g, new THREE.LineDashedMaterial({ color, dashSize: 0.05, gapSize: 0.03, transparent: true, opacity: 0.8 }));
+    l.computeLineDistances(); pv.esc.add(l); return l;
+  }
+  function prepararPreview(id) {
+    if (!pv.r) iniciarPreview();
+    if (pv.id === id) return;
+    pv.id = id;
+    const A = ANIM[id];
+    for (const o of [pv.lineaIn, pv.lineaOut, ...pv.marcas]) if (o) pv.esc.remove(o);
+    pv.marcas = []; pv.tray = []; pv.t = 0;
+    $('gViene').innerHTML = `${A.viene}<small>${A.sub}</small>`;
+    if (A.reposo) { pv.tC = 0; pv.bola.visible = false; pv.flecha.visible = false; return; }
+    pv.bola.visible = true; pv.flecha.visible = true;
+    const inP = [], outP = [];
+    const marca = (p, color) => { const m = new THREE.Mesh(new THREE.RingGeometry(0.03, 0.045, 20), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+      m.rotation.x = -Math.PI / 2; m.position.set(p.x, TH + 0.003, p.z); pv.esc.add(m); pv.marcas.push(m); };
+    let contacto = null, wC = null;
+    if (A.saque) {
+      // tirada de la pelota desde la mano
+      const p0 = new THREE.Vector3(A.tx + 0.1, TH + 0.1, TL / 2 + 0.15);
+      simular(p0, new THREE.Vector3(0, 2.2, 0), new THREE.Vector3(), 2, () => {
+        inP.push(sim.p.clone());
+        if (sim.v.y < 0 && sim.p.y <= TH + 0.18) { contacto = sim.p.clone(); return true; }
+      });
+    } else {
+      const desde = new THREE.Vector3(0, TH + (A.globo ? 0.1 : 0.28), -(TL / 2 + 0.2));
+      const tz = A.corta ? 0.35 : A.globo ? 0.9 : 0.85;
+      _dir.set(A.tx - desde.x, 0, tz - desde.z).normalize();
+      const w0 = efecto(_dir, A.efIn, 0);
+      const v0 = A.globo ? new THREE.Vector3(_dir.x * A.vIn, 4.2, _dir.z * A.vIn) : apuntar(desde, A.tx, tz, A.vIn, w0);
+      let pico = false;
+      simular(desde, v0, w0, 4, ev => {
+        inP.push(sim.p.clone());
+        if (ev === 'pique') { marca(sim.p, 0xff9a2e); if (sim.p.z > 0) pico = true; }
+        if (ev === 'cae') return true;
+        if (pico && ((sim.v.y <= 0 && sim.p.z >= TL / 2 - 0.6) || sim.p.z >= TL / 2 + 0.3)) { contacto = sim.p.clone(); return true; }
+      });
+    }
+    if (!contacto) contacto = inP[inP.length - 1].clone();
+    // salida
+    const S = A.sale;
+    _dir.set(S.tx - contacto.x, 0, S.tz - contacto.z).normalize();
+    wC = efecto(_dir, S.ef, 0);
+    const vS = A.saque ? (apuntarSaque(contacto, S.tx, S.tz, S.v, wC, 1) || apuntar(contacto, S.tx, S.tz, S.v, wC)) : apuntar(contacto, S.tx, S.tz, S.v, wC);
+    let nP = 0;
+    simular(contacto, vS, wC, 3, ev => {
+      outP.push(sim.p.clone());
+      if (ev === 'pique') { marca(sim.p, 0x7dff7d); nP++; }
+      if (ev === 'cae' || sim.p.z < -TL / 2 - 0.8 || nP >= (A.saque ? 2 : 1) && sim.p.z < -TL / 2) return true;
+    });
+    pv.lineaIn = lineaPv(inP, 0xff9a2e);
+    pv.lineaOut = lineaPv(outP, 0x7dff7d);
+    pv.inP = inP; pv.outP = outP; pv.contacto = contacto; pv.wIn = A.efIn; pv.wOut = S.ef;
+    pv.tC = inP.length / 240;                         // los puntos están a 240 Hz
+    const off = (p) => new THREE.Vector3(contacto.x + p[0], contacto.y + p[1], contacto.z + p[2]);
+    pv.poses = {
+      espera: { p: new THREE.Vector3(A.reves ? -0.05 : 0.15, 0.95, TL / 2 + 0.35), q: poseQ([0, 0, 0, A.reves ? 0.2 : -0.2, 0, 0], A.reves, new THREE.Quaternion()) },
+      atras: { p: off(A.atras), q: poseQ(A.atras, A.reves, new THREE.Quaternion()) },
+      contacto: { p: off(A.contacto), q: poseQ(A.contacto, A.reves, new THREE.Quaternion()) },
+      final: { p: off(A.final), q: poseQ(A.final, A.reves, new THREE.Quaternion()) }
+    };
+  }
+  const suave = x => x * x * (3 - 2 * x);
+  function animarPreview(dt) {
+    const g = golpeSel(), A = ANIM[g.id];
+    if (!pv.r) return;
+    const box = $('gVista'), w = box.clientWidth, h = box.clientHeight;
+    if (w && (pv.r.domElement.width !== Math.round(w * pv.r.getPixelRatio()))) { pv.r.setSize(w, h); pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix(); }
+    pv.t += dt * 0.8;                                    // un poco más lento que la realidad, para verlo bien
+    if (A.reposo) {
+      const t = pv.t;
+      pv.pal.position.set(0.15 + Math.sin(t * 1.3) * 0.06, 0.95 + Math.sin(t * 0.9) * 0.04, TL / 2 + 0.35);
+      pv.pal.quaternion.setFromEuler(_pe.set(-0.2 + Math.sin(t * 1.1) * 0.15, Math.sin(t * 0.7) * 0.3, 0));
+      pv.r.render(pv.esc, pv.cam); return;
+    }
+    const tIn = pv.tC, tOut = pv.outP.length / 240, ciclo = tIn + tOut + 0.9;
+    if (pv.t > ciclo) pv.t -= ciclo;
+    const t = pv.t;
+    // pelota
+    let pos, dirEf = null;
+    if (t < tIn) { pos = pv.inP[Math.min(pv.inP.length - 1, Math.floor(t * 240))]; dirEf = pv.wIn; }
+    else if (t < tIn + tOut) { pos = pv.outP[Math.min(pv.outP.length - 1, Math.floor((t - tIn) * 240))]; dirEf = pv.wOut; }
+    else pos = pv.outP[pv.outP.length - 1];
+    pv.bola.position.copy(pos);
+    // flecha de efecto: gira hacia adelante (topspin) o hacia atrás (cortado) sobre la pelota
+    if (dirEf && Math.abs(dirEf) > 30) {
+      pv.flecha.visible = true;
+      const sentido = (t < tIn ? 1 : -1) * Math.sign(dirEf);           // + = la parte de arriba va hacia donde viaja
+      const a = t * 14;
+      const viaje = t < tIn ? 1 : -1;
+      tmpV.set(0, Math.cos(a), Math.sin(a) * viaje * sentido * -1).multiplyScalar(0.05);
+      pv.flecha.position.copy(pos).add(tmpV);
+      pv.flecha.setDirection(_d.set(0, -Math.sin(a), Math.cos(a) * viaje * sentido * -1).normalize());
+      pv.flecha.setLength(0.05, 0.03, 0.025);
+    } else pv.flecha.visible = false;
+    // paleta: espera → atrás → contacto → final
+    const P = pv.poses; let a_, b_, k;
+    if (t < tIn - 0.55) { a_ = P.espera; b_ = P.espera; k = 0; }
+    else if (t < tIn - 0.22) { a_ = P.espera; b_ = P.atras; k = (t - (tIn - 0.55)) / 0.33; }
+    else if (t < tIn) { a_ = P.atras; b_ = P.contacto; k = (t - (tIn - 0.22)) / 0.22; }
+    else if (t < tIn + 0.25) { a_ = P.contacto; b_ = P.final; k = (t - tIn) / 0.25; }
+    else if (t < ciclo - 0.4) { a_ = P.final; b_ = P.final; k = 0; }
+    else { a_ = P.final; b_ = P.espera; k = (t - (ciclo - 0.4)) / 0.4; }
+    k = suave(clamp(k, 0, 1));
+    pv.pal.position.lerpVectors(a_.p, b_.p, k);
+    pv.pal.quaternion.copy(a_.q).slerp(b_.q, k);
+    pv.r.render(pv.esc, pv.cam);
+  }
+
+  const gctx2 = $('gPlot').getContext('2d');
+  function dibujarMuestra(m) {
+    const c = $('gPlot'), w = c.width, h = c.height;
+    gctx2.fillStyle = '#151a22'; gctx2.fillRect(0, 0, w, h);
+    $('gInfo').textContent = '';
+    if (!m) return;
+    const t0 = m.frames[0].t, t1 = m.frames[m.frames.length - 1].t, X = t => (t - t0) / ((t1 - t0) || 1) * w;
+    const esc = Math.max(300, ...m.frames.map(f => f.r ? Math.max(...f.r.map(Math.abs)) : 0));
+    gctx2.strokeStyle = '#2a313c'; gctx2.beginPath(); gctx2.moveTo(0, h / 2); gctx2.lineTo(w, h / 2); gctx2.stroke();
+    if (m.pico) { gctx2.strokeStyle = '#ffcc00'; gctx2.beginPath(); gctx2.moveTo(X(0), 0); gctx2.lineTo(X(0), h); gctx2.stroke(); }
+    ['#5599ff', '#ff5555', '#55dd55'].forEach((col, k) => {
+      gctx2.strokeStyle = col; gctx2.lineWidth = 3; gctx2.beginPath();
+      m.frames.forEach((f, i) => { if (!f.r) return; const y = h / 2 - f.r[k] / esc * (h / 2 - 6); i ? gctx2.lineTo(X(f.t), y) : gctx2.moveTo(X(f.t), y); });
+      gctx2.stroke();
+    });
+    $('gInfo').textContent = m.pico
+      ? `Pico ${m.pico} °/s · cara al pico: ${m.cara.cerrada >= 0 ? 'cerrada ' + m.cara.cerrada : 'abierta ' + (-m.cara.cerrada)}°, apunta ${m.cara.giro >= 0 ? m.cara.giro + '° a la derecha' : (-m.cara.giro) + '° a la izquierda'} · ${m.frames.length} lecturas`
+      : `${m.frames.length} lecturas en 5 s`;
+  }
+
+  $('gUmbral').oninput = () => {
+    umbralGolpe[golpeSel().id] = +$('gUmbral').value;
+    try { localStorage.setItem('pp-grab-umbral', JSON.stringify(umbralGolpe)); } catch (e) {}
+    pintarGrabador();
+  };
+  $('gDel').onclick = descartarUltimo;
+  $('gBorrar').onclick = () => { if (confirm('¿Borrar todas las muestras de "' + golpeSel().nombre + '"?')) { delete grab[golpeSel().id]; guardarGrab(); pintarGrabador(); enviarRec(); } };
+  $('gSig').onclick = () => { gSel = (gSel + 1) % GOLPES.length; pintarGrabador(); enviarRec(); };
+  $('gReposo').onclick = () => {
+    if (!usandoCel || !calibrado) return;
+    cap.reposoHasta = performance.now() + 5000;
+    $('gEstado').textContent = '⏺ Grabando 5 segundos… movete normal, sin golpes'; $('gEstado').className = 'warn';
+  };
+  $('gBajar').onclick = () => {
+    const datos = {
+      version: 1, fecha: new Date().toISOString(), fuente: $('cfgFuente').textContent, cfg,
+      nota: 'q = cuaternión crudo del cel [w,x,y,z] (cel→mundo W3C). r = rotationRate [alpha(z), beta(x), gamma(y)] °/s. a = aceleración sin gravedad (m/s², ejes del cel). t = ms desde el pico. calib = alineación (ypsi) e inversa de la posición 0 (q0inv), formato three.js [x,y,z,w].',
+      golpes: grab
+    };
+    const blob = new Blob([JSON.stringify(datos)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'golpes-pingpong-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  /* ================= ESTADO DEL JUEGO ================= */
+  const bola = { p: new THREE.Vector3(0, 1, PZ - 0.2), v: new THREE.Vector3(), w: new THREE.Vector3(), dPrev: 0, tocoRed: false };
+  const pad = { x: 0, y: 1.0, z: PZ };
+  const cpu = { x: 0, y: 1.0, z: CZ };
+  const puntos = { player: 0, cpu: 0 };
+  let estado = 'saque', sacador = 'player', ultimo = null, piques = { player: 0, cpu: 0 }, timer = 0.6;
+  const saque = { activo: false, propio: false };
+  const otro = q => q === 'player' ? 'cpu' : 'player';
+  const swing = { armado: true, t: -1e9 };
+  const eMouse = new THREE.Euler();
+  const caraN = new THREE.Vector3(), _om = new THREE.Vector3(), _piv = new THREE.Vector3(), _Vp = new THREE.Vector3(),
+        _d = new THREE.Vector3(), _nn = new THREE.Vector3(), _inpl = new THREE.Vector3(), _P = new THREE.Vector3();
+
+  // Velocidad angular de la paleta: el pico de las últimas muestras (absorbe la latencia)
+  function omegaPaleta(now) {
+    if (!usandoCel) return _om.set(0, 0, 0);
+    let mejor = null, m = -1;
+    for (const s of wBuf) if (now - s.t < 110 && s.w.lengthSq() > m) { m = s.w.lengthSq(); mejor = s.w; }
+    return mejor ? _om.copy(mejor) : _om.set(0, 0, 0);
+  }
+  // Velocidad de un punto de la paleta. El giroscopio da la rotación; el eje pasa por el hombro,
+  // que está atrás, arriba y hacia el centro del cuerpo (a la izquierda del drive de un diestro, a la derecha del revés).
+  const HOMBRO = new THREE.Vector3(0.55, -0.45, -0.7).normalize();   // vector hombro → paleta (drive diestro)
+  function velPaleta(P, out, lado = 1) {
+    if (!usandoCel) return performance.now() - swing.t < 140 ? out.set(0, 1.2, -5) : out.set(0, 0, 0);
+    const w = omegaPaleta(performance.now());
+    _d.copy(HOMBRO); _d.x *= lado * (cfg.mano === 'zurda' ? -1 : 1);
+    return out.crossVectors(w, _d.multiplyScalar(cfg.brazo));
+  }
+
+  function mensaje(txt, sub) { $('mensaje').innerHTML = txt ? txt + (sub ? `<small>${sub}</small>` : '') : ''; }
+  function actualizarMarcador() {
+    $('marcador').classList.toggle('oculto', cfg.juego !== 'partido' || tab !== 'juego');
+    $('mVos').textContent = 'VOS ' + puntos.player;
+    $('mCpu').textContent = puntos.cpu + ' CPU';
+    $('mVos').className = sacador === 'player' ? 'saca' : '';
+    $('mCpu').className = sacador === 'cpu' ? 'saca' : '';
+  }
+
+  function tipoEfecto(w, v) {
+    const rps = w.length() / (2 * Math.PI);
+    if (rps < 4) return 'Sin efecto';
+    const m = _c.crossVectors(w, v); const l = m.length() || 1;
+    if (m.y < -0.5 * l) return 'Topspin';
+    if (m.y > 0.5 * l) return 'Cortado';
+    return 'Lateral';
+  }
+  function mostrarStats(cara, velPal) {
+    const kmh = bola.v.length() * 3.6, rps = bola.w.length() / (2 * Math.PI);
+    const ang = Math.round(Math.asin(clamp(-cara.y)) * R2D);
+    $('stats').innerHTML =
+      `<span>Pelota <b>${Math.round(kmh)} km/h</b></span>` +
+      `<span>${tipoEfecto(bola.w, bola.v)} <b>${Math.round(rps)} rps</b></span>` +
+      `<span>Cara <b>${ang >= 0 ? 'cerrada ' + ang : 'abierta ' + (-ang)}°</b></span>` +
+      `<span>Paleta <b>${Math.round(velPal * 3.6)} km/h</b></span>`;
+  }
+
+  // ---------- Saques ----------
+  function iniciarJugada(quien) {
+    estado = 'juego'; ultimo = quien; piques = { player: 0, cpu: 0 };
+    bola.tocoRed = false; mensaje('');
+  }
+
+  function sacarJugador() {
+    // Contacto real con la paleta (para el efecto y la fuerza)
+    caraN.set(0, 0, -1).applyQuaternion(Rel);
+    bola.v.set(0, -1.2, 0); bola.w.set(0, 0, 0);
+    _P.copy(bola.p).addScaledVector(caraN, -BR);
+    velPaleta(_P, _Vp);
+    const velPal = _Vp.length();
+    impacto(bola, caraN, _Vp, cfg.rebote, cfg.agarre, ET_GOMA);
+    iniciarJugada('player');
+    saque.activo = true; saque.propio = false;
+    if (cfg.saqueAsist) {
+      const hz = Math.hypot(bola.v.x, bola.v.z);
+      const tz = -(TL / 2 - 0.45);
+      const tx = bola.v.z < -0.5 ? clamp(bola.p.x + bola.v.x / -bola.v.z * (bola.p.z - tz), -0.6, 0.6) : bola.p.x * 0.5;
+      const w0 = bola.w.clone(); if (w0.length() > 450) w0.setLength(450);
+      const v = apuntarSaque(bola.p, tx, tz, clamp(hz, 3, 7.5), w0, 1);
+      if (v) { bola.v.copy(v); bola.w.copy(w0); }
+    }
+    mostrarStats(caraN, velPal);
+    if (celConn && celConn.open) celConn.send({ t: 'hit' });
+  }
+
+  function sacarCpu() {
+    bola.p.set(cpu.x, TH + 0.22, -(TL / 2 + 0.1));
+    const tx = (Math.random() - 0.5) * 1.0, tz = TL / 2 - 0.3 - Math.random() * 0.5;
+    _dir.set(tx - bola.p.x, 0, tz - bola.p.z).normalize();
+    const tipo = Math.random();
+    const w0 = tipo < 0.45 ? efecto(_dir, -(150 + Math.random() * 150), 0)          // cortado
+             : tipo < 0.75 ? efecto(_dir, 0, (Math.random() < 0.5 ? -1 : 1) * 180)   // lateral
+             : efecto(_dir, 120, 0);                                                // topspin
+    const v = apuntarSaque(bola.p, tx, tz, 4 + cfg.dif * 0.5, w0, -1) || apuntar(bola.p, tx, tz, 4, w0);
+    bola.v.copy(v); bola.w.copy(w0);
+    iniciarJugada('cpu'); saque.activo = true; saque.propio = false;
+  }
+
+  function lanzarRobot() {
+    bola.p.set((Math.random() - 0.5) * 0.4, TH + 0.28, -(TL / 2 + 0.2));
+    const tx = (Math.random() - 0.5) * 1.0, tz = 0.55 + Math.random() * 0.6;
+    _dir.set(tx - bola.p.x, 0, tz - bola.p.z).normalize();
+    let tipo = cfg.robot;
+    if (tipo === 'mezcla') tipo = ['top', 'back', 'plano'][Math.floor(Math.random() * 3)];
+    const w0 = efecto(_dir, tipo === 'top' ? 200 : tipo === 'back' ? -160 : 0, 0);
+    const v = apuntar(bola.p, tx, tz, tipo === 'back' ? 5.5 : 7.5, w0);
+    bola.v.copy(v); bola.w.copy(w0);
+    iniciarJugada('cpu'); saque.activo = false;
+    $('stats').innerHTML = `<span>Viene: <b>${tipoEfecto(w0, v)}</b> · <b>${Math.round(v.length() * 3.6)} km/h</b></span>`;
+  }
+
+  // ---------- Golpes ----------
+  function golpeJugador(velPal, nn) {
+    iniciarJugada('player'); saque.activo = false;
+    mostrarStats(nn, velPal);
+    if (celConn && celConn.open) celConn.send({ t: 'hit' });
+  }
+
+  function golpeCpu() {
+    const sp = bola.v.length(), spin = bola.w.length();
+    const pErr = clamp(0.06 + (sp - 9) / 28 + spin / 1400 - (cfg.dif - 3) * 0.05, 0.02, 0.7);
+    let tx = (Math.random() - 0.5) * 1.2, tz = 0.35 + Math.random() * 0.9;
+    const velH = 4.5 + cfg.dif * 0.9 + Math.random() * 1.5;
+    _dir.set(tx - bola.p.x, 0, tz - bola.p.z).normalize();
+    const w0 = efecto(_dir, 60 + cfg.dif * 35 + Math.random() * 60, (Math.random() - 0.5) * 60);
+    let v;
+    if (Math.random() < pErr) {
+      const falla = Math.random();
+      if (falla < 0.4) tz = TL / 2 + 0.25;                       // larga
+      else if (falla < 0.7) tx = Math.sign(tx || 1) * 0.95;      // afuera por el costado
+      else tz = -0.15;                                           // a la red
+      v = apuntar(bola.p, tx, tz, velH, w0, false);
+    } else v = apuntar(bola.p, tx, tz, velH, w0);
+    bola.v.copy(v); bola.w.copy(w0);
+    iniciarJugada('cpu'); saque.activo = false;
+  }
+
+  // ---------- Reglas ----------
+  function punto(ganador, motivo) {
+    if (estado !== 'juego') return;
+    if (cfg.juego === 'practica') { estado = 'punto'; timer = 1.4; mensaje(motivo); return; }
+    puntos[ganador]++;
+    const a = puntos.player, b = puntos.cpu;
+    if ((a >= 11 || b >= 11) && Math.abs(a - b) >= 2) {
+      estado = 'fin';
+      mensaje(a > b ? '🏆 ¡Ganaste!' : '😓 Ganó la CPU', `${a} – ${b} · golpe o click para revancha`);
+    } else {
+      estado = 'punto'; timer = 1.6;
+      mensaje(ganador === 'player' ? '¡Punto tuyo!' : 'Punto CPU', motivo);
+    }
+    actualizarMarcador();
+  }
+
+  function prepararSaque() {
+    if (cfg.juego === 'practica') sacador = 'cpu';
+    else {
+      const tot = puntos.player + puntos.cpu;
+      sacador = (puntos.player >= 10 && puntos.cpu >= 10)
+        ? (tot % 2 === 0 ? 'player' : 'cpu')
+        : (Math.floor(tot / 2) % 2 === 0 ? 'player' : 'cpu');
+    }
+    estado = 'saque'; timer = sacador === 'cpu' ? (cfg.juego === 'practica' ? 0.9 : 1.2) : 0.5;
+    bola.v.set(0, 0, 0); bola.w.set(0, 0, 0); clickPendiente = false; saque.activo = false;
+    mensaje(sacador === 'player' ? 'Tu saque' : '', sacador === 'player' ? 'Hacé el golpe con el cel (o click)' : '');
+    actualizarMarcador();
+  }
+
+  const quien = q => q === 'cpu' ? 'CPU: ' : '';
+  function pique(lado) {
+    if (estado !== 'juego') return;
+    if (saque.activo) {
+      if (!saque.propio) {
+        if (lado === ultimo) { saque.propio = true; return; }
+        return punto(otro(ultimo), quien(ultimo) + 'El saque tiene que picar primero de tu lado');
+      }
+      if (lado === ultimo) return punto(otro(ultimo), quien(ultimo) + 'Saque: picó dos veces de su lado');
+      saque.activo = false;
+    } else if (lado === ultimo) {
+      return punto(otro(ultimo), ultimo === 'player' ? 'Picó de tu lado' : 'CPU: picó de su lado');
+    }
+    piques[lado]++;
+    if (piques[lado] >= 2) return punto(ultimo, ultimo === 'player' ? 'No llegó' : 'Doble pique');
+    if (ultimo === 'player' && cfg.juego === 'practica') punto('player', '✔ ¡Adentro!');
+  }
+
+  function fuera() {
+    if (estado !== 'juego') return;
+    const q = ultimo, rival = otro(q);
+    if (piques[rival] >= 1) return punto(q, q === 'player' ? 'No llegó' : 'No llegaste');
+    let motivo;
+    if (bola.tocoRed) motivo = 'Red';
+    else if (Math.sign(bola.p.z) === (q === 'player' ? 1 : -1)) motivo = 'No pasó la red';
+    else if (Math.abs(bola.p.z) > TL / 2) motivo = 'Larga';
+    else motivo = 'Afuera por el costado';
+    punto(rival, quien(q) + motivo);
+  }
+
+  // ---------- Física de la jugada (sub-paso) ----------
+  function fisica(h) {
+    const zp = bola.p.z;
+    paso(bola, h);
+
+    if (cruzaRed(bola, zp)) {
+      bola.p.z = zp; bola.v.z *= -0.1; bola.v.x *= 0.3; bola.w.multiplyScalar(0.3); bola.tocoRed = true;
+    }
+    if (rebotaMesa(bola)) pique(bola.p.z > 0 ? 'player' : 'cpu');
+
+    // Contacto con tu paleta: plano de la cara, disco de 8,5 cm (+ radio de la pelota)
+    _d.copy(bola.p).sub(_P.set(pad.x, pad.y, pad.z));
+    const dist = _d.dot(caraN);
+    if (estado === 'juego' && ultimo === 'cpu' && piques.player === 1) {
+      const cruzo = (bola.dPrev > 0) !== (dist > 0);
+      if (cruzo || Math.abs(dist) < BR) {
+        _nn.copy(caraN).multiplyScalar(bola.dPrev >= 0 ? 1 : -1);
+        _inpl.copy(_d).addScaledVector(caraN, -dist);
+        if (_inpl.length() < 0.085 + BR * 0.5) {
+          bola.p.set(pad.x, pad.y, pad.z).add(_inpl).addScaledVector(_nn, BR * 1.05);
+          velPaleta(_P.copy(bola.p).addScaledVector(_nn, -BR), _Vp, bola.dPrev >= 0 ? 1 : -1);   // cara roja = drive, negra = revés
+          const velPal = _Vp.length();
+          if (impacto(bola, _nn, _Vp, cfg.rebote, cfg.agarre, ET_GOMA)) golpeJugador(velPal, _nn);
+        }
+      }
+    }
+    bola.dPrev = _d.copy(bola.p).sub(_P.set(pad.x, pad.y, pad.z)).dot(caraN);
+
+    // Golpe de la CPU
+    if (estado === 'juego' && ultimo === 'player' && piques.cpu === 1 && zp > cpu.z && bola.p.z <= cpu.z) {
+      if (Math.hypot(bola.p.x - cpu.x, bola.p.y - cpu.y) < 0.24) golpeCpu();
+    }
+    if (bola.p.y < TH - 0.25 || Math.abs(bola.p.z) > 4.5 || Math.abs(bola.p.x) > 2.5) fuera();
+  }
+
+  // Dónde conviene pegarle (después del pique, cerca del final de la mesa o en la caída)
+  function puntoContacto(lado) {
+    const nombre = lado === 1 ? 'player' : 'cpu';
+    let pico = piques[nombre] >= 1, res = null;
+    simular(bola.p, bola.v, bola.w, 2.5, ev => {
+      if (ev === 'red' || ev === 'cae') return true;
+      if (ev === 'pique') { if (Math.sign(sim.p.z) === lado) pico = true; else if (pico) return true; }
+      if (!pico) return false;
+      const z = sim.p.z * lado;
+      // en el pico del pique (como se juega cerca de la mesa) o, si viene larga, pasando el fondo
+      if ((sim.v.y <= 0 && z >= TL / 2 - 0.5) || z >= TL / 2 + 0.35) {
+        res = { x: clamp(sim.p.x, -1.2, 1.2), y: clamp(sim.p.y, TH + 0.05, 1.6), z: sim.p.z };
+        return true;
+      }
+    });
+    return res;
+  }
+
+  function moverHacia(o, x, y, z, vmax) {
+    _d.set(x - o.x, y - o.y, z - o.z);
+    if (_d.length() > vmax) _d.setLength(vmax);
+    o.x += _d.x; o.y += _d.y; o.z += _d.z;
+  }
+
+  /* ================= LOOP ================= */
+  prepararSaque();
+  let last = performance.now();
+  const qSpin = new THREE.Quaternion(), ejeSpin = new THREE.Vector3();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!usandoCel) inp.s *= 0.9;
+
+    // Orientación de la paleta = orientación del cel desde la posición 0
+    if (usandoCel && hayQ) {
+      enVista(qRaw, Qobj);
+      Qs.slerp(Qobj, 1 - Math.exp(-dt * cfg.resp));
+      Rel.copy(Qs).multiply(Q0inv);
+    } else if (!usandoCel) {
+      Rel.setFromEuler(eMouse.set(-0.05 - mouseY * 0.5, -mouseX * 0.5, -mouseX * 0.3));
+    }
+    pPad.quaternion.copy(Rel);
+    caraN.set(0, 0, -1).applyQuaternion(Rel);
+
+    // Swing (para sacar y para la revancha)
+    if (!swing.armado && inp.s < cfg.umbral * 0.5) swing.armado = true;
+    let swingNuevo = false;
+    if (swing.armado && inp.s > cfg.umbral) {
+      swing.armado = false; swingNuevo = true;
+      $('cfgSwing').textContent = Math.round(inp.s) + ' °/s';
+    }
+    if (clickPendiente) { swingNuevo = true; clickPendiente = false; }
+
+    if (tab === 'grabar') { animarPreview(dt); requestAnimationFrame(loop); return; }
+
+    if (tab === 'config') {
+      celModelo.quaternion.copy(Qs);
+      palPreview.quaternion.copy(Rel);
+      eul.setFromQuaternion(Qs, 'YXZ');
+      $('cfgYaw').textContent = Math.round(eul.y * R2D) + '°';
+      $('cfgPitch').textContent = Math.round(eul.x * R2D) + '°';
+      $('cfgRoll').textContent = Math.round(eul.z * R2D) + '°';
+      const ang = Math.round(Math.asin(clamp(-caraN.y)) * R2D);
+      $('cfgCara').textContent = ang >= 0 ? 'cerrada ' + ang + '°' : 'abierta ' + (-ang) + '°';
+      $('cfgVel').textContent = Math.round(velPaleta(_P.set(pad.x, pad.y, pad.z), _Vp).length() * 3.6) + ' km/h';
+      dibujarGrafico();
+      r2.render(s2, cam2);
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    // Cel bloqueado / sin datos → pausa
+    const sinDatos = usandoCel && now - ultDato > 600;
+    if (sinDatos && !enBloqueo) { enBloqueo = true; mensaje('📱 Cel en pausa', 'Desbloquealo: se reconecta solo y te pide la posición 0'); }
+    else if (!sinDatos && enBloqueo) { enBloqueo = false; if (calibrado) mensaje(''); }
+    const pausa = usandoCel && (!calibrado || sinDatos);
+
+    if (!pausa) {
+      timer -= dt;
+
+      // Tu paleta se ubica sola en el punto de contacto: vos ponés el ángulo y el golpe
+      let obj = null;
+      if (estado === 'juego' && ultimo === 'cpu') obj = puntoContacto(1);
+      if (obj) moverHacia(pad, obj.x, obj.y, clamp(obj.z, TL / 2 - 0.3, TL / 2 + 0.7), 5 * dt);
+      else if (estado === 'saque' && sacador === 'player') moverHacia(pad, 0.15, TH + 0.25, TL / 2 + 0.15, 3 * dt);
+      else moverHacia(pad, 0, 1.0, PZ, 2 * dt);
+
+      // CPU
+      let oc = null;
+      if (estado === 'juego' && ultimo === 'player') oc = puntoContacto(-1);
+      const vc = (1.6 + cfg.dif * 0.35) * dt;
+      if (oc) moverHacia(cpu, oc.x, oc.y, clamp(oc.z, -(TL / 2 + 0.7), -(TL / 2 - 0.3)), vc);
+      else moverHacia(cpu, 0, 1.0, CZ, vc);
+
+      if (estado === 'saque') {
+        if (sacador === 'player') {
+          bola.p.set(pad.x, pad.y, pad.z).addScaledVector(caraN, 0.05);
+          bola.dPrev = 0.05;
+          if (timer <= 0 && swingNuevo) sacarJugador();
+        } else {
+          bola.p.set(cpu.x, TH + 0.22, -(TL / 2 + 0.1));
+          if (timer <= 0) cfg.juego === 'practica' ? lanzarRobot() : sacarCpu();
+        }
+      } else {
+        const N = 10;
+        for (let i = 0; i < N; i++) fisica(dt / N);
+        if (estado === 'punto' && timer <= 0) prepararSaque();
+        if (estado === 'fin' && swingNuevo) { puntos.player = 0; puntos.cpu = 0; prepararSaque(); }
+      }
+
+      // Giro visual de la pelota (reducido para que se distinga)
+      const wl = bola.w.length();
+      if (wl > 1) { qSpin.setFromAxisAngle(ejeSpin.copy(bola.w).divideScalar(wl), wl * dt * 0.08); bolaMesh.quaternion.premultiply(qSpin); }
+    }
+
+    pPad.position.set(pad.x, pad.y, pad.z);
+    cPad.position.set(cpu.x, cpu.y, cpu.z);
+    cPad.rotation.set(-0.1, Math.PI + cpu.x * 0.3, 0);
+    bolaMesh.position.copy(bola.p);
+    camera.position.x += (pad.x * 0.3 - camera.position.x) * Math.min(1, dt * 4);
+    camera.lookAt(camLook);
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   CELULAR — solo lee el sensor y lo manda crudo
+   ================================================================ */
+function iniciarCel() {
+  mostrar('cel');
+  if (params.get('sala')) $('sala').value = params.get('sala').toUpperCase();
+
+  let conn = null, q = null, fuente = '', swing = 0, movMax = 0, rate = [0, 0, 0], acc = null, ultEnvio = 0, enCuenta = false;
+  const D2R = Math.PI / 180;
+  const enviar = m => { if (conn && conn.open) conn.send(m); };
+  function paso(id) { ['paso1','pasoCal','paso2'].forEach(p => $(p).classList.toggle('oculto', p !== id)); }
+
+  // Euler (deviceorientation) → cuaternión [w,x,y,z], orden Z-X'-Y'' del estándar W3C
+  function eulerQ(a, b, g) {
+    const x = b * D2R / 2, y = g * D2R / 2, z = a * D2R / 2;
+    const cX = Math.cos(x), cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+    return [cX*cY*cZ - sX*sY*sZ, sX*cY*cZ - cX*sY*sZ, cX*sY*cZ + sX*cY*sZ, cX*cY*sZ + sX*sY*cZ];
+  }
+
+  function onQ(qq) {
+    q = qq;
+    const ahora = performance.now();
+    if (ahora - ultEnvio > 15) {
+      enviar({ t: 'o', ts: Math.round(ahora), q: q.map(v => Math.round(v * 10000) / 10000), s: Math.round(swing), r: rate.map(Math.round), a: acc, f: fuente });
+      ultEnvio = ahora;
+      $('barra').firstElementChild.style.width = Math.min(100, swing / 6) + '%';
+      swing *= 0.8;
+    }
+  }
+
+  async function iniciarSensores() {
+    // 1) Intento con el sensor de orientación nativo en cuaterniones (Chrome Android): más preciso, sin "gimbal lock"
+    if ('RelativeOrientationSensor' in window) {
+      try {
+        if (navigator.permissions) {
+          const r = await Promise.all(['accelerometer', 'gyroscope'].map(n => navigator.permissions.query({ name: n }).catch(() => ({ state: 'prompt' }))));
+          if (r.some(x => x.state === 'denied')) throw new Error('denegado');
+        }
+        const s = new RelativeOrientationSensor({ frequency: 60, referenceFrame: 'device' });
+        await new Promise((ok, mal) => {
+          const to = setTimeout(() => mal(new Error('sin datos')), 2000);
+          s.addEventListener('reading', () => { clearTimeout(to); const [x, y, z, w] = s.quaternion; onQ([w, x, y, z]); ok(); });
+          s.addEventListener('error', e => { clearTimeout(to); mal(e.error); });
+          s.start();
+        });
+        fuente = 'quat';
+        $('fuenteCel').textContent = 'Sensor: cuaternión nativo ✔';
+        return;
+      } catch (e) { /* sigue con el plan B */ }
+    }
+    // 2) Plan B: deviceorientation (iPhone y navegadores sin la API nueva)
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') throw new Error('Sin permiso de sensor');
+    }
+    window.addEventListener('deviceorientation', e => {
+      if (e.alpha == null || e.beta == null) return;
+      onQ(eulerQ(e.alpha, e.beta, e.gamma));
+    });
+    fuente = 'euler';
+    $('fuenteCel').textContent = 'Sensor: deviceorientation (modo compatible)';
+  }
+
+  function calibrar() {
+    if (enCuenta) return;
+    if (!q) return setEstado('estadoCel', 'Todavía no llegan datos del sensor…');
+    enCuenta = true;
+    paso('pasoCal'); $('btnCal').classList.add('oculto');
+    let n = 3;
+    (function tick() {
+      if (n > 0) {
+        $('cuenta').textContent = n;
+        enviar({ t: 'cal', n });
+        navigator.vibrate?.(15);
+        movMax = 0; n--;
+        setTimeout(tick, 1000);
+      } else if (movMax > 45) {
+        $('cuenta').textContent = '😅';
+        enviar({ t: 'cal', n: -1 });
+        n = 3; setTimeout(tick, 1000);
+      } else {
+        enCuenta = false;
+        $('cuenta').textContent = '';
+        $('btnCal').classList.remove('oculto');
+        navigator.vibrate?.([30, 50, 30]);
+        enviar({ t: 'calOk' });
+        paso('paso2');
+      }
+    })();
+  }
+
+  function irACalibracion() {
+    $('cuenta').textContent = ''; $('btnCal').classList.remove('oculto');
+    paso('pasoCal');
+    enviar({ t: 'cal' });
+  }
+
+  $('btnCal').onclick = calibrar;
+  $('recCelDel').onclick = () => enviar({ t: 'recDel' });
+  $('btnRecal').onclick = irACalibracion;
+
+  // ---------- Pantalla siempre encendida ----------
+  let wakeLock = null;
+  async function mantenerEncendida() {
+    if (!('wakeLock' in navigator)) { $('pantallaCel').textContent = '⚠️ Este navegador no puede evitar que la pantalla se apague: subí el tiempo de bloqueo en Ajustes'; return; }
+    try {
+      if (wakeLock && !wakeLock.released) return;
+      wakeLock = await navigator.wakeLock.request('screen');
+      $('pantallaCel').textContent = '🔆 Pantalla siempre encendida';
+      wakeLock.addEventListener('release', () => { $('pantallaCel').textContent = ''; });
+    } catch (e) { $('pantallaCel').textContent = '⚠️ No pude mantener la pantalla encendida (' + e.name + ')'; }
+  }
+
+  // ---------- Conexión (con reconexión automática) ----------
+  let peer = null, salaActual = '', conectando = false;
+  function conectar(alAbrir) {
+    if (conectando) return;
+    conectando = true;
+    setTimeout(() => { conectando = false; }, 8000);   // por si queda colgado, el reintento vuelve a probar
+    try { peer?.destroy(); } catch (e) {}
+    setEstado('estadoCel', 'Conectando…');
+    peer = new Peer();
+    peer.on('open', () => {
+      const c = peer.connect(PREFIJO + salaActual, { reliable: false });
+      c.on('open', () => {
+        conn = c; conectando = false;
+        c.send({ t: 'ver', v: VERSION });
+        setEstado('estadoCel', '✅ Conectado a la mesa', true);
+        alAbrir();
+      });
+      c.on('data', d => {
+        if (d.t === 'hit') navigator.vibrate?.(35);
+        if (d.t === 'recal') { irACalibracion(); calibrar(); }
+        if (d.t === 'rec') { $('recCel').classList.toggle('oculto', !d.txt); $('recCelTxt').textContent = d.txt; }
+      });
+      c.on('close', () => { if (c === conn) setEstado('estadoCel', 'Se cortó la conexión — reintentando…'); });
+    });
+    peer.on('error', e => {
+      conectando = false;
+      setEstado('estadoCel', e.type === 'peer-unavailable' ? 'No encontré esa sala' : 'Error: ' + e.type);
+    });
+  }
+
+  // Al volver de un bloqueo / otra app: pantalla encendida, reconectar si hace falta y pedir posición 0
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !salaActual) return;
+    mantenerEncendida();
+    navigator.vibrate?.(40);
+    const retomar = () => { irACalibracion(); setTimeout(calibrar, 400); };
+    if (conn && conn.open && peer && !peer.disconnected) retomar();
+    else conectar(retomar);
+  });
+  // Si la conexión se cae con la pantalla prendida, reintenta sola
+  setInterval(() => {
+    if (salaActual && document.visibilityState === 'visible' && !conectando && !(conn && conn.open)) conectar(() => irACalibracion());
+  }, 3000);
+
+  $('btnConectar').onclick = async () => {
+    const sala = $('sala').value.trim().toUpperCase();
+    if (sala.length !== 4) return setEstado('estadoCel', 'El código tiene 4 letras');
+
+    try {
+      if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission();
+      await iniciarSensores();
+    } catch (e) { return setEstado('estadoCel', 'Error de sensor: ' + e.message); }
+
+    window.addEventListener('devicemotion', e => {
+      const r = e.rotationRate; if (!r) return;
+      rate = [r.alpha || 0, r.beta || 0, r.gamma || 0];
+      const a = e.acceleration;
+      if (a && a.x != null) acc = [a.x, a.y, a.z].map(v => Math.round(v * 100) / 100);
+      const m = Math.hypot(...rate);
+      swing = Math.max(swing, m);
+      movMax = Math.max(movMax, m);
+    });
+    await mantenerEncendida();
+
+    salaActual = sala;
+    conectar(() => irACalibracion());
+  };
+}
+</script>
+</body>
+</html>
