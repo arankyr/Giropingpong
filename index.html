@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Ping Pong v0.9</title>
+<title>Ping Pong v1.0</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -184,6 +184,22 @@
       <button id="cfgResetYa">🎯 Reset ya (como Betaflight)</button>
       <button id="cfgResetCuenta" class="sec">⏱️ Reset con cuenta 3‑2‑1</button>
 
+      <h3>Tu golpe</h3>
+      <label>Cómo se calcula
+        <select id="c_golpe">
+          <option value="modelo">🧠 Mis golpes (modelo personal)</option>
+          <option value="fisica">⚛️ Física pura</option>
+        </select>
+      </label>
+      <label>Precisión exigida
+        <select id="c_precision">
+          <option value="facil">Fácil (perdona bastante)</option>
+          <option value="normal">Normal</option>
+          <option value="dificil">Difícil (tenés que repetir tu técnica)</option>
+        </select>
+      </label>
+      <div class="nota" id="cfgModelo"></div>
+
       <h3>Física del golpe</h3>
       <label>Rebote de la goma: <b id="v_rebote"></b>
         <input type="range" id="c_rebote" min="0.5" max="0.95" step="0.01">
@@ -239,6 +255,8 @@
         <button id="gSig" class="sec">Siguiente golpe ▶</button>
         <button id="gBajar">⬇ Descargar grabación (.json)</button>
       </div>
+      <label style="font-size:15px"><input type="checkbox" id="gProbar"> 🧪 Probar reconocimiento (no guarda: te dice qué golpe reconoce)</label>
+      <div id="gModelo" class="nota" style="font-size:13px"></div>
       <div>Último golpe grabado — giroscopio (°/s) desde −0,6 s a +0,4 s del pico:</div>
       <canvas id="gPlot" width="1520" height="400"></canvas>
       <div id="gInfo"></div>
@@ -280,8 +298,8 @@
 
 <script>
 // ⬇ Cambia en cada entrega: así sabés si la página está actualizada (la ves abajo a la derecha, en la PC y en el cel)
-const VERSION = '0.9';
-const VERSION_FECHA = '19/10 00:45';
+const VERSION = '1.0';
+const VERSION_FECHA = '19/10 02:30';
 const PREFIJO = 'mica-pingpong-';
 const $ = id => document.getElementById(id);
 const clamp = (v, a = -1, b = 1) => Math.max(a, Math.min(b, v));
@@ -304,7 +322,7 @@ function iniciarPC() {
 
   // ---------- Ajustes guardados ----------
   const FISICA_DEF = { rebote: 0.78, agarre: 0.8, brazo: 0.6, magnus: 1 };
-  const cfg = { mira: 'yo', resp: 35, umbral: 280, dif: 3, saqueAsist: true, juego: 'practica', robot: 'top', mano: 'diestra', ...FISICA_DEF };
+  const cfg = { mira: 'yo', resp: 35, umbral: 280, dif: 3, saqueAsist: true, juego: 'practica', robot: 'top', mano: 'diestra', golpe: 'modelo', precision: 'normal', ...FISICA_DEF };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem('pp-cfg2') || '{}')); } catch (e) {}
   const guardarCfg = () => { try { localStorage.setItem('pp-cfg2', JSON.stringify(cfg)); } catch (e) {} };
 
@@ -316,6 +334,9 @@ function iniciarPC() {
   for (const k in SLIDERS) $('c_' + k).oninput = () => { cfg[k] = +$('c_' + k).value; guardarCfg(); pintarSliders(); };
   pintarSliders();
   $('cfgFisicaDef').onclick = () => { Object.assign(cfg, FISICA_DEF); guardarCfg(); pintarSliders(); };
+  $('c_golpe').value = cfg.golpe; $('c_precision').value = cfg.precision;
+  $('c_golpe').onchange = () => { cfg.golpe = $('c_golpe').value; guardarCfg(); };
+  $('c_precision').onchange = () => { cfg.precision = $('c_precision').value; guardarCfg(); };
   $('c_mano').value = cfg.mano;
   $('c_mano').onchange = () => { cfg.mano = $('c_mano').value; guardarCfg(); };
   $('c_saqueAsist').checked = cfg.saqueAsist;
@@ -855,6 +876,7 @@ function iniciarPC() {
   const metaDe = g => g.meta || META;
   const umbralDe = g => umbralGolpe[g.id] ?? g.umbral ?? 250;
   function guardarGrab() {
+    setTimeout(entrenar, 0);
     try { localStorage.setItem('pp-grab', JSON.stringify(grab)); }
     catch (e) { $('gEstado').textContent = '⚠️ No entra más en la memoria del navegador: descargá la grabación'; }
   }
@@ -882,6 +904,7 @@ function iniciarPC() {
     else if (g.id === 'reposo') { est.textContent = `Tocá "Grabar 5 segundos" (${n}/${metaDe(g)})`; est.className = ''; }
     else { est.textContent = `Hacé el golpe… ${n}/${metaDe(g)}`; est.className = ''; }
     dibujarMuestra((grab[g.id] || []).slice(-1)[0]);
+    $('gModelo').textContent = '🧠 Modelo de golpes: ' + modeloInfo;
   }
 
   function enviarRec() {
@@ -894,10 +917,9 @@ function iniciarPC() {
   // Ángulo de la cara y hacia dónde apunta, para un cuaternión crudo del cel
   const _gq = new THREE.Quaternion(), _gn = new THREE.Vector3();
   function caraDe(qArr) {
-    _gq.set(qArr[1], qArr[2], qArr[3], qArr[0]);
-    enVista(_gq, _gq); _gq.multiply(Q0inv);
-    _gn.set(0, 0, -1).applyQuaternion(_gq);
-    return { cerrada: Math.round(Math.asin(clamp(-_gn.y)) * R2D), giro: Math.round(Math.atan2(_gn.x, -_gn.z) * R2D) };
+    const A = procesar([{ t: 0, q: qArr, r: [0, 0, 0], a: null }]);
+    const n = A[0].n, nh = n.z > 0 ? n.clone().negate() : n;
+    return { cerrada: Math.round(Math.asin(clamp(-nh.y)) * R2D), giro: Math.round(Math.atan2(nh.x, -nh.z) * R2D), cara: n.z > 0 ? 'negra' : 'roja' };
   }
 
   function grabadorFrame(d) {
@@ -917,12 +939,13 @@ function iniciarPC() {
       }
       return;
     }
-    if ((grab[g.id] || []).length >= metaDe(g)) return;
+    if ((grab[g.id] || []).length >= metaDe(g) && !$('gProbar').checked) return;
     if (!cap.activo && now > cap.hasta && mag > umbralDe(g)) { cap.activo = true; cap.tPico = now; cap.pico = mag; }
     if (cap.activo) {
       if (mag > cap.pico) { cap.pico = mag; cap.tPico = now; }
       if (now - cap.tPico > 420) {
         cap.activo = false; cap.hasta = now + 600;
+        if ($('gProbar').checked) { probarReconocimiento(cap.tPico); return; }
         const frames = recBuf.filter(f => f.t >= cap.tPico - 600 && f.t <= cap.tPico + 420);
         guardarMuestra(g, frames, cap.tPico, cap.pico);
       }
@@ -1109,7 +1132,7 @@ function iniciarPC() {
       gctx2.stroke();
     });
     $('gInfo').textContent = m.pico
-      ? `Pico ${m.pico} °/s · cara al pico: ${m.cara.cerrada >= 0 ? 'cerrada ' + m.cara.cerrada : 'abierta ' + (-m.cara.cerrada)}°, apunta ${m.cara.giro >= 0 ? m.cara.giro + '° a la derecha' : (-m.cara.giro) + '° a la izquierda'} · ${m.frames.length} lecturas`
+      ? `Pico ${m.pico} °/s · cara ${m.cara.cara || ''} al pico: ${m.cara.cerrada >= 0 ? 'cerrada ' + m.cara.cerrada : 'abierta ' + (-m.cara.cerrada)}°, apunta ${m.cara.giro >= 0 ? m.cara.giro + '° a la derecha' : (-m.cara.giro) + '° a la izquierda'} · ${m.frames.length} lecturas`
       : `${m.frames.length} lecturas en 5 s`;
   }
 
@@ -1138,6 +1161,168 @@ function iniciarPC() {
     a.download = 'golpes-pingpong-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json';
     document.body.appendChild(a); a.click(); a.remove();
   };
+
+  /* ================= MODELO PERSONAL DE GOLPES ================= */
+  // Aprende de las grabaciones cómo hacés cada golpe (ángulo de cara, dirección y velocidad del swing, giro)
+  // y en el juego reconoce el golpe: si lo hacés como siempre sale bien; si te desviás, sale a la red, larga o afuera.
+  const MODELO_BASE = {"bloqueo_d":{"negra":true,"cerr":[-23.2,9.0],"elev":[3.4,8.0],"w":[674.5,124.07],"sp":[4.1,1.15],"yaw":[-16.7,16.05]},"peloteo_d":{"negra":true,"cerr":[-11.7,8.78],"elev":[-52.5,17.73],"w":[517.2,143.55],"sp":[1.9,0.7],"yaw":[39.4,9.73]},"topspin_d":{"negra":true,"cerr":[26.5,13.81],"elev":[28.6,8.0],"w":[649.9,94.71],"sp":[3.8,1.01],"yaw":[-6.5,11.79]},"remate":{"negra":true,"cerr":[8.0,20.72],"elev":[-20.6,21.54],"w":[717.4,213.59],"sp":[5.3,3.08],"yaw":[9.8,17.47]},"push_d":{"negra":true,"cerr":[-35.9,21.04],"elev":[-28.3,23.4],"w":[373.1,128.64],"sp":[1.8,1.7],"yaw":[-15.8,17.77]},"bloqueo_r":{"negra":false,"cerr":[-15.4,9.45],"elev":[22.6,13.33],"w":[257.0,80.0],"sp":[1.2,0.48],"yaw":[24.3,8.0]},"peloteo_r":{"negra":false,"cerr":[-1.5,6.0],"elev":[13.8,8.0],"w":[584.4,80.0],"sp":[2.3,0.4],"yaw":[32.6,11.2]},"topspin_r":{"negra":false,"cerr":[29.2,7.06],"elev":[19.2,8.0],"w":[696.8,93.24],"sp":[2.4,0.4],"yaw":[-3.1,8.0]},"push_r":{"negra":false,"cerr":[-56.2,8.68],"elev":[-23.3,8.0],"w":[483.2,103.35],"sp":[2.8,0.4],"yaw":[7.0,8.18]},"saque":{"negra":true,"cerr":[-41.2,17.58],"elev":[-23.0,20.55],"w":[983.4,118.52],"sp":[4.7,0.76],"yaw":[-21.9,9.89]}};
+  const NOMBRE = Object.fromEntries(GOLPES.map(g => [g.id, g.nombre]));
+  const PISO = { cerr: 6, elev: 8, w: 80, sp: 0.4, yaw: 8 };
+  const RASGOS = ['cerr', 'elev', 'w', 'sp', 'yaw'];
+  let modelo = MODELO_BASE, modeloInfo = '';
+  const _fq = new THREE.Quaternion();
+  function procesar(frames, ypsiArr, q0invArr) {
+    const Yq = ypsiArr ? new THREE.Quaternion().fromArray(ypsiArr) : Ypsi;
+    const Q0 = q0invArr ? new THREE.Quaternion().fromArray(q0invArr) : Q0inv;
+    return frames.map(f => {
+      _fq.set(f.q[1], f.q[2], f.q[3], f.q[0]);
+      const Q = Yq.clone().multiply(M).multiply(_fq);
+      const n = new THREE.Vector3(0, 0, -1).applyQuaternion(Q.clone().multiply(Q0));
+      const r = f.r || [0, 0, 0];
+      const a = f.a ? new THREE.Vector3(f.a[0], f.a[1], f.a[2]).applyQuaternion(Q) : new THREE.Vector3();
+      return { t: f.t, n, mag: Math.hypot(r[0], r[1], r[2]), a };
+    });
+  }
+  // Rasgos del golpe en el instante ic usando solo lo anterior (igual en la grabación y en el juego)
+  function rasgos(A, ic) {
+    const v = new THREE.Vector3(), vs = [v.clone()];
+    for (let k = 1; k < A.length; k++) {
+      const dt = (A[k].t - A[k - 1].t) / 1000;
+      if (A[k].mag < 80 && A[k].a.length() < 1.5) v.multiplyScalar(0.5);     // quieto: velocidad a cero
+      else v.addScaledVector(A[k].a, dt).multiplyScalar(Math.exp(-dt));
+      vs.push(v.clone());
+    }
+    const n = A[ic].n, negra = n.z > 0, nh = negra ? n.clone().negate() : n.clone();
+    let w = 0, kb = ic, mejor = -1e9;
+    for (let k = 0; k < A.length; k++) {
+      const dt = A[ic].t - A[k].t;
+      if (dt < 0 || dt > 150) continue;
+      w = Math.max(w, A[k].mag);
+      const s = vs[k].dot(nh); if (s > mejor) { mejor = s; kb = k; }
+    }
+    const vb = vs[kb], sp = vb.length() + 1e-6;
+    return { negra, nh, w, sp, cerr: Math.asin(clamp(-nh.y)) * R2D, yaw: Math.atan2(nh.x, -nh.z) * R2D, elev: Math.asin(clamp(vb.y / sp)) * R2D };
+  }
+  const mediana = a => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+  function entrenar() {
+    const m = {}; let total = 0;
+    for (const g of GOLPES) {
+      const ms = grab[g.id] || [];
+      if (g.id === 'reposo' || ms.length < 5) continue;
+      const F = ms.map(mu => {
+        const A = procesar(mu.frames, mu.calib.ypsi, mu.calib.q0inv);
+        let ip = 0; A.forEach((x, i) => { if (x.mag > A[ip].mag) ip = i; });
+        return rasgos(A, ip);
+      });
+      const st = { negra: F.filter(f => f.negra).length > F.length / 2, n: F.length };
+      for (const k of RASGOS) {
+        const vals = F.map(f => f[k]), med = mediana(vals);
+        st[k] = [med, Math.max(1.4826 * mediana(vals.map(x => Math.abs(x - med))), PISO[k])];
+      }
+      m[g.id] = st; total += F.length;
+    }
+    if (Object.keys(m).filter(k => k !== 'saque').length >= 2) { modelo = m; modeloInfo = `aprendido de tus ${total} golpes grabados en este navegador (${Object.keys(m).length} tipos)`; }
+    else { modelo = MODELO_BASE; modeloInfo = 'modelo base (tus grabaciones del 19/10). Si grabás más golpes acá, se reentrena solo'; }
+    $('cfgModelo').textContent = '🧠 ' + modeloInfo;
+  }
+  function clasificar(f, alta, efIn) {
+    let mejor = null;
+    for (const [c, s] of Object.entries(modelo)) {
+      if (c === 'saque' || s.negra !== f.negra) continue;
+      if (c === 'remate' && !alta) continue;                          // remate solo con pelota alta
+      let d2 = 0;
+      for (const k of ['cerr', 'elev', 'w', 'sp']) d2 += ((f[k] - s[k][0]) / s[k][1]) ** 2;
+      // contexto: contra topspin casi nadie hace push; contra cortado, el bloqueo/peloteo es raro
+      const tipo = c.split('_')[0];
+      if (efIn === 'Topspin' && tipo === 'push') d2 += 4;
+      if (efIn === 'Cortado' && (tipo === 'bloqueo' || tipo === 'peloteo')) d2 += 2;
+      if (!mejor || d2 < mejor.d2) mejor = { c, d2, s };
+    }
+    return mejor;
+  }
+  function rasgosAhora(now) {
+    const frames = recBuf.filter(f => f.t >= now - 700 && f.q);
+    if (frames.length < 4) return null;
+    const A = procesar(frames);
+    // igual que al grabar: los rasgos se toman en el pico del swing (últimos 150 ms)
+    let ic = A.length - 1;
+    for (let i = 0; i < A.length; i++) if (now - frames[i].t <= 150 && A[i].mag > A[ic].mag) ic = i;
+    return rasgos(A, ic);
+  }
+  function umbralSwing(negra) {
+    const ws = Object.entries(modelo).filter(([c, s]) => c !== 'saque' && s.negra === negra).map(([, s]) => s.w[0]);
+    return Math.max(120, (ws.length ? Math.min(...ws) : 300) * 0.45);
+  }
+
+  // Cómo sale cada tipo de golpe (cuando lo hacés como siempre)
+  const SALIDA = {
+    bloqueo: { kmh: null, rps: 12, prof: 0.75 },
+    peloteo: { kmh: 38, rps: 18, prof: 0.6 },
+    topspin: { kmh: 50, rps: 45, prof: 0.45 },
+    remate:  { kmh: 78, rps: 8, prof: 0.55 },
+    push:    { kmh: 22, rps: -30, prof: 0.95 }
+  };
+  const TOLERANCIA = { facil: 2.6, normal: 2.0, dificil: 1.4 };
+  function golpeModelo(f, cl) {
+    const s = cl.s, tipo = cl.c.split('_')[0], S = SALIDA[tipo];
+    const tol = TOLERANCIA[cfg.precision] || 2;
+    const efIn = tipoEfecto(bola.w, bola.v), velIn = bola.v.length();
+    let zc = (f.cerr - s.cerr[0]) / s.cerr[1];                 // + = cara más cerrada que tu costumbre
+    const zy = (f.yaw - s.yaw[0]) / s.yaw[1];                  // + = cara apuntando más a la derecha
+    const zi = clamp((f.w - s.w[0]) / s.w[1], -2, 2);          // + = swing más fuerte que tu costumbre
+    let nota = '';
+    if (efIn === 'Cortado' && (tipo === 'bloqueo' || tipo === 'peloteo' || tipo === 'remate')) { zc += 1.0; nota = 'plano contra cortado: se cae'; }
+    if (efIn === 'Topspin' && tipo === 'push') { zc -= 1.3; nota = 'push contra topspin: se levanta'; }
+    const kmh = (S.kmh ?? Math.max(22, velIn * 3.6 * 0.8 + 6)) * clamp(1 + 0.12 * zi, 0.75, 1.3);
+    const rps = S.rps * clamp(1 + 0.1 * zi, 0.7, 1.3);
+    let tz = -(TL / 2 - S.prof) - clamp(-zc, -1.5, 1.5) * 0.12;       // más abierta = más profunda
+    let tx = clamp(-Math.sign(bola.p.x || 1) * 0.2 + zy * 0.12, -0.62, 0.62);
+    let falla = null;
+    if (zc > tol) falla = 'red'; else if (zc < -tol) falla = 'larga'; else if (Math.abs(zy) > tol * 2) falla = 'costado';
+    if (falla === 'red') tz = -0.03;
+    if (falla === 'larga') tz = -(TL / 2 + 0.35);
+    if (falla === 'costado') tx = Math.sign(zy) * 0.98;
+    _dir.set(tx - bola.p.x, 0, tz - bola.p.z).normalize();
+    const w0 = efecto(_dir, rps * 2 * Math.PI, 0);
+    const v = apuntar(bola.p, tx, tz, kmh / 3.6 * 0.95, w0, !falla);
+    bola.v.copy(v); bola.w.copy(w0);
+    // devolución: cuánto te desviaste de tu golpe habitual
+    const dC = Math.round(f.cerr - s.cerr[0]);
+    let consejo = Math.abs(zc) < 0.8 ? 'como siempre 👌' : dC > 0 ? `cara ${dC}° más cerrada que tu habitual` : `cara ${-dC}° más abierta que tu habitual`;
+    if (nota) consejo = nota + (Math.abs(zc) >= 0.8 ? ' · ' + consejo : '');
+    $('stats').innerHTML =
+      `<span><b>${NOMBRE[cl.c]}</b></span><span>Pelota <b>${Math.round(v.length() * 3.6)} km/h</b></span>` +
+      `<span>${rps >= 0 ? 'Topspin' : 'Cortado'} <b>${Math.abs(Math.round(rps))} rps</b></span><span>${consejo}${falla ? ' → ' + (falla === 'red' ? 'red' : falla === 'larga' ? 'larga' : 'afuera') : ''}</span>`;
+  }
+  const pend = { activo: false, t: 0 };
+  function contactoModelo(now) {
+    const f = rasgosAhora(now);
+    if (!f) return false;
+    if (f.w < umbralSwing(f.negra)) return false;
+    const cl = clasificar(f, bola.p.y > TH + 0.42, tipoEfecto(bola.w, bola.v));
+    if (!cl) return false;
+    if (cl.d2 / 4 > 9) {                                         // golpe muy distinto a todos los tuyos: física pura
+      _Vp.set(0, 0, 0);
+      return false;
+    }
+    golpeModelo(f, cl);
+    iniciarJugada('player'); saque.activo = false;
+    if (celConn && celConn.open) celConn.send({ t: 'hit' });
+    return true;
+  }
+  function probarReconocimiento(tPico) {
+    const frames = recBuf.filter(f => f.t >= tPico - 600 && f.t <= tPico);
+    if (frames.length < 5) return;
+    const A = procesar(frames); let ip = 0; A.forEach((x, i) => { if (x.mag > A[ip].mag) ip = i; });
+    const f = rasgos(A, ip);
+    const cl = clasificar(f, golpeSel().id === 'remate');
+    const txt = cl ? `🧪 Reconocí: ${NOMBRE[cl.c]}${cl.d2 / 4 > 9 ? ' (pero muy distinto a lo grabado)' : ''}` : '🧪 No lo reconocí';
+    $('gEstado').textContent = txt; $('gEstado').className = cl && cl.c === golpeSel().id ? 'ok' : 'warn';
+    $('gInfo').textContent = `cara ${f.negra ? 'negra' : 'roja'} · ${f.cerr >= 0 ? 'cerrada ' + Math.round(f.cerr) : 'abierta ' + Math.round(-f.cerr)}° · swing ${Math.round(f.w)} °/s · mano ${f.sp.toFixed(1)} m/s, ${Math.round(f.elev)}° ${f.elev >= 0 ? 'hacia arriba' : 'hacia abajo'}`;
+    if (celConn && celConn.open) { celConn.send({ t: 'rec', txt }); celConn.send({ t: 'hit' }); }
+  }
+  setTimeout(entrenar, 0);
+  window.__pp = () => ({ estado, ultimo, piques: { ...piques }, bz: bola.p.z, by: bola.p.y, padz: pad.z, pend: pend.activo, stats: $('stats').textContent, msg: $('mensaje').textContent });
 
   /* ================= ESTADO DEL JUEGO ================= */
   const bola = { p: new THREE.Vector3(0, 1, PZ - 0.2), v: new THREE.Vector3(), w: new THREE.Vector3(), dPrev: 0, tocoRed: false };
@@ -1354,7 +1539,10 @@ function iniciarPC() {
       if (cruzo || Math.abs(dist) < BR) {
         _nn.copy(caraN).multiplyScalar(bola.dPrev >= 0 ? 1 : -1);
         _inpl.copy(_d).addScaledVector(caraN, -dist);
-        if (_inpl.length() < 0.085 + BR * 0.5) {
+        if (_inpl.length() < 0.085 + BR * 0.5 && usandoCel && cfg.golpe === 'modelo') {
+          // modelo personal: si ya hiciste el swing, golpe; si no, espera hasta 110 ms tu swing
+          if (!pend.activo) { pend.activo = true; pend.t = performance.now(); pend.nn = _nn.clone(); }
+        } else if (_inpl.length() < 0.085 + BR * 0.5) {
           bola.p.set(pad.x, pad.y, pad.z).add(_inpl).addScaledVector(_nn, BR * 1.05);
           velPaleta(_P.copy(bola.p).addScaledVector(_nn, -BR), _Vp, bola.dPrev >= 0 ? 1 : -1);   // cara roja = drive, negra = revés
           const velPal = _Vp.length();
@@ -1463,6 +1651,17 @@ function iniciarPC() {
       const vc = (1.6 + cfg.dif * 0.35) * dt;
       if (oc) moverHacia(cpu, oc.x, oc.y, clamp(oc.z, -(TL / 2 + 0.7), -(TL / 2 - 0.3)), vc);
       else moverHacia(cpu, 0, 1.0, CZ, vc);
+
+      if (pend.activo) {
+        const ahora = performance.now();
+        if (estado !== 'juego' || ultimo !== 'cpu') pend.activo = false;
+        else if (contactoModelo(ahora)) pend.activo = false;
+        else if (ahora - pend.t > 110) {
+          // no hubo swing a tiempo: la pelota pega en la paleta quieta (bloqueo pasivo, física pura)
+          pend.activo = false;
+          if (bola.p.z - pad.z < 0.45 && impacto(bola, pend.nn, CERO, cfg.rebote, cfg.agarre, ET_GOMA)) golpeJugador(0, pend.nn);
+        }
+      }
 
       if (estado === 'saque') {
         if (sacador === 'player') {
